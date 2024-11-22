@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace CreativeCrafts\EmailService\Services\RateLimiter;
 
 use CreativeCrafts\EmailService\Interfaces\RateLimiterInterface;
