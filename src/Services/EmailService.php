@@ -13,6 +13,7 @@ use CreativeCrafts\EmailService\Interfaces\TemplateEngineInterface;
 use GuzzleHttp\Promise\PromiseInterface;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Random\RandomException;
 use RuntimeException;
 
@@ -26,9 +27,9 @@ class EmailService implements EmailServiceInterface
 
     private LoggerInterface $logger;
 
-    private RateLimiterInterface $rateLimiter;
+    private ?RateLimiterInterface $rateLimiter;
 
-    private TemplateEngineInterface $templateEngine;
+    private ?TemplateEngineInterface $templateEngine;
 
     private string $senderEmail = '';
 
@@ -56,19 +57,19 @@ class EmailService implements EmailServiceInterface
      * for sending emails, logging, rate limiting, and template rendering.
      *
      * @param SesClient $sesClient The AWS SES client for sending emails.
-     * @param LoggerInterface $logger The logger for recording events and errors.
-     * @param RateLimiterInterface $rateLimiter The rate limiter to control email sending frequency.
-     * @param TemplateEngineInterface $templateEngine The template engine for rendering email templates.
+     * @param LoggerInterface|null $logger The logger for recording events and errors (optional).
+     * @param RateLimiterInterface|null $rateLimiter The rate limiter to control email sending frequency (optional).
+     * @param TemplateEngineInterface|null $templateEngine The template engine for rendering email templates (optional).
      * @throws RandomException
      */
     public function __construct(
         SesClient $sesClient,
-        LoggerInterface $logger,
-        RateLimiterInterface $rateLimiter,
-        TemplateEngineInterface $templateEngine
+        ?LoggerInterface $logger = null,
+        ?RateLimiterInterface $rateLimiter = null,
+        ?TemplateEngineInterface $templateEngine = null
     ) {
         $this->sesClient = $sesClient;
-        $this->logger = $logger;
+        $this->logger = $logger ?? new NullLogger();
         $this->rateLimiter = $rateLimiter;
         $this->templateEngine = $templateEngine;
         $this->boundary = bin2hex(random_bytes(16));
@@ -85,11 +86,35 @@ class EmailService implements EmailServiceInterface
      */
     public function setSenderEmail(string $email): self
     {
-        if (!$this->validateEmail($email)) {
+        if (! $this->validateEmail($email)) {
             throw new InvalidArgumentException('Invalid sender email');
         }
         $this->senderEmail = $email;
         return $this;
+    }
+
+    /**
+     * Validates an email address.
+     * This method checks if the given email address is valid by using PHP's built-in
+     * filter_var function and verifying the existence of an MX record for the domain.
+     *
+     * @param string $email The email address to validate.
+     * @return bool Returns true if the email is valid and has a valid MX record,
+     *              false otherwise.
+     */
+    protected function validateEmail(string $email): bool
+    {
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+
+        $domain = strrchr($email, "@");
+        if ($domain === false) {
+            return false;
+        }
+
+        $domain = substr($domain, 1);
+        return checkdnsrr($domain, "MX");
     }
 
     /**
@@ -117,7 +142,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setRecipientEmail(string $email): self
     {
-        if (!$this->validateEmail($email)) {
+        if (! $this->validateEmail($email)) {
             throw new InvalidArgumentException('Invalid recipient email');
         }
         $this->recipientEmail = $email;
@@ -183,6 +208,32 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
+     * Validates an attachment file for email sending.
+     * This function checks if the attachment file exists, its size is within
+     * the allowed limit, and its MIME type is among the allowed types.
+     *
+     * @param string $filePath The full path to the attachment file.
+     * @throws InvalidArgumentException If the file doesn't exist, exceeds the size limit,
+     *                                  or has an unsupported MIME type.
+     */
+    private function validateAttachment(string $filePath): void
+    {
+        if (! file_exists($filePath)) {
+            throw new InvalidArgumentException('Attachment file does not exist');
+        }
+
+        $fileSize = filesize($filePath);
+        if ($fileSize > self::MAX_ATTACHMENT_SIZE) {
+            throw new InvalidArgumentException('Attachment file size exceeds the maximum allowed size');
+        }
+
+        $mimeType = mime_content_type($filePath);
+        if (! in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
+            throw new InvalidArgumentException('Attachment file type is not allowed');
+        }
+    }
+
+    /**
      * Sets the email template and renders it with the provided variables.
      * This method loads a template, renders it with the given variables,
      * sets the rendered content as the HTML body of the email, and
@@ -191,9 +242,13 @@ class EmailService implements EmailServiceInterface
      * @param string $templateName The name or identifier of the email template to load.
      * @param array $variables An associative array of variables to be used in rendering the template.
      * @return self Returns the current instance of the class for method chaining.
+     * @throws RuntimeException If the template engine is not set.
      */
     public function setEmailTemplate(string $templateName, array $variables): self
     {
+        if (! $this->templateEngine instanceof TemplateEngineInterface) {
+            throw new RuntimeException('Template engine is not set');
+        }
         $template = $this->templateEngine->load($templateName);
         $this->bodyHtml = $template->render($variables);
         $this->bodyText = $this->htmlToText($this->bodyHtml);
@@ -201,20 +256,40 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Sends an email using the configured AWS SES client.
-     * This method performs rate limiting checks, validates email data,
-     * constructs the message body, and sends the email using AWS SES.
-     * It also handles logging for successful sends and errors.
+     * Converts HTML content to plain text.
+     * This function removes HTML tags, decodes HTML entities, and normalizes whitespace
+     * to create a plain text version of the given HTML content.
      *
-     * @return Result The result object from AWS SES containing information about the sent email,
-     *                including the message ID.
-     * @throws InvalidArgumentException If the email data validation fails.
-     * @throws AwsException If an error occurs while sending the email through AWS SES.
+     * @param string $html The HTML content to be converted to plain text.
+     * @return string The resulting plain text version of the input HTML.
+     */
+    private function htmlToText(string $html): string
+    {
+        $text = strip_tags($html);
+        $text = html_entity_decode($text);
+        /** @var string $text */
+        $text = preg_replace('/\s+/', ' ', $text);
+        return trim($text);
+    }
+
+    /**
+     * Sends an email using Amazon SES.
+     * This method performs rate limiting checks, validates email data,
+     * constructs the message body, and then sends the email. It logs
+     * the success or failure of the email sending operation.
+     *
+     * @return Result The result of the email sending operation.
+     *                Contains information such as the MessageId on success.
      * @throws RuntimeException If the email sending rate limit is exceeded.
+     * @throws InvalidArgumentException If the email data validation fails.
+     * @throws AwsException If there's an error during the AWS SES API call.
      */
     public function sendEmail(): Result
     {
-        if (!$this->rateLimiter->allow('send_email', $this->senderEmail)) {
+        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
+            'send_email',
+            $this->senderEmail
+        )) {
             throw new RuntimeException('Email sending rate limit exceeded');
         }
 
@@ -240,72 +315,6 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Sends an email asynchronously using the configured AWS SES client.
-     * This method performs rate limiting checks, validates email data,
-     * constructs the message body, and sends the email asynchronously using AWS SES.
-     * It also handles logging for successful sends and errors.
-     *
-     * @return PromiseInterface A promise that resolves with the result object from AWS SES
-     *                          containing information about the sent email, including the message ID.
-     *                          The promise rejects with an exception if an error occurs.
-     * @throws RuntimeException If the email sending rate limit is exceeded.
-     * @throws InvalidArgumentException If the email data validation fails.
-     * @throws AwsException If an error occurs while sending the email through AWS SES.
-     */
-    public function sendEmailAsync(): PromiseInterface
-    {
-        if (!$this->rateLimiter->allow('send_email', $this->senderEmail)) {
-            throw new RuntimeException('Email sending rate limit exceeded');
-        }
-
-        $this->fullEmailDataValidation();
-        $this->constructMessageBody();
-
-        return $this->sesClient->sendRawEmailAsync([
-            'RawMessage' => [
-                'Data' => implode("\n", $this->messageBody),
-            ],
-        ])->then(
-            function ($result) {
-                $this->logger->info('Email sent successfully', [
-                    'messageId' => $result['MessageId'],
-                ]);
-                return $result;
-            },
-            function ($exception): void {
-                $this->logger->error('Error sending email', [
-                    'error' => $exception->getMessage(),
-                ]);
-                throw $exception;
-            }
-        );
-    }
-
-    /**
-     * Validates an email address.
-     * This method checks if the given email address is valid by using PHP's built-in
-     * filter_var function and verifying the existence of an MX record for the domain.
-     *
-     * @param string $email The email address to validate.
-     * @return bool Returns true if the email is valid and has a valid MX record,
-     *              false otherwise.
-     */
-    protected function validateEmail(string $email): bool
-    {
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return false;
-        }
-
-        $domain = strrchr($email, "@");
-        if ($domain === false) {
-            return false;
-        }
-
-        $domain = substr($domain, 1);
-        return checkdnsrr($domain, "MX");
-    }
-
-    /**
      * Performs full validation of email data before sending.
      * This method checks the validity of the sender and recipient email addresses,
      * ensures that a subject is provided, and verifies that either a text or HTML body
@@ -319,10 +328,10 @@ class EmailService implements EmailServiceInterface
      */
     protected function fullEmailDataValidation(): void
     {
-        if (!$this->validateEmail($this->senderEmail)) {
+        if (! $this->validateEmail($this->senderEmail)) {
             throw new InvalidArgumentException('A valid sender email is required');
         }
-        if (!$this->validateEmail($this->recipientEmail)) {
+        if (! $this->validateEmail($this->recipientEmail)) {
             throw new InvalidArgumentException('A valid recipient email is required');
         }
         if ($this->subject === '' || $this->subject === '0') {
@@ -420,45 +429,46 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Validates an attachment file for email sending.
-     * This function checks if the attachment file exists, its size is within
-     * the allowed limit, and its MIME type is among the allowed types.
+     * Sends an email asynchronously using Amazon SES.
+     * This method performs rate limiting checks, validates email data,
+     * constructs the message body, and then sends the email asynchronously.
+     * It logs the success or failure of the email sending operation.
      *
-     * @param string $filePath The full path to the attachment file.
-     * @throws InvalidArgumentException If the file doesn't exist, exceeds the size limit,
-     *                                  or has an unsupported MIME type.
+     * @return PromiseInterface A promise that resolves with the result of the email sending operation.
+     *                          The promise resolves with an array containing the 'MessageId' on success.
+     * @throws RuntimeException If the email sending rate limit is exceeded.
+     * @throws InvalidArgumentException If the email data validation fails.
+     * @throws AwsException If there's an error during the AWS SES API call.
      */
-    private function validateAttachment(string $filePath): void
+    public function sendEmailAsync(): PromiseInterface
     {
-        if (!file_exists($filePath)) {
-            throw new InvalidArgumentException('Attachment file does not exist');
+        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
+            'send_email',
+            $this->senderEmail
+        )) {
+            throw new RuntimeException('Email sending rate limit exceeded');
         }
 
-        $fileSize = filesize($filePath);
-        if ($fileSize > self::MAX_ATTACHMENT_SIZE) {
-            throw new InvalidArgumentException('Attachment file size exceeds the maximum allowed size');
-        }
+        $this->fullEmailDataValidation();
+        $this->constructMessageBody();
 
-        $mimeType = mime_content_type($filePath);
-        if (!in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
-            throw new InvalidArgumentException('Attachment file type is not allowed');
-        }
-    }
-
-    /**
-     * Converts HTML content to plain text.
-     * This function removes HTML tags, decodes HTML entities, and normalizes whitespace
-     * to create a plain text version of the given HTML content.
-     *
-     * @param string $html The HTML content to be converted to plain text.
-     * @return string The resulting plain text version of the input HTML.
-     */
-    private function htmlToText(string $html): string
-    {
-        $text = strip_tags($html);
-        $text = html_entity_decode($text);
-        /** @var string $text */
-        $text = preg_replace('/\s+/', ' ', $text);
-        return trim($text);
+        return $this->sesClient->sendRawEmailAsync([
+            'RawMessage' => [
+                'Data' => implode("\n", $this->messageBody),
+            ],
+        ])->then(
+            function ($result) {
+                $this->logger->info('Email sent successfully', [
+                    'messageId' => $result['MessageId'],
+                ]);
+                return $result;
+            },
+            function ($exception): void {
+                $this->logger->error('Error sending email', [
+                    'error' => $exception->getMessage(),
+                ]);
+                throw $exception;
+            }
+        );
     }
 }

@@ -32,7 +32,7 @@ class AdvancedTemplate implements TemplateInterface
     public function render(array $variables): string
     {
         ob_start();
-        (static function ($__templatePath, $__variables) {
+        (static function ($__templatePath, $__variables): void {
             foreach ($__variables as $__key => $__value) {
                 $$__key = $__value;
             }

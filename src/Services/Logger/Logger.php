@@ -54,7 +54,7 @@ class Logger implements LoggerInterface
         $logLevel = $this->normalizeLogLevel($level);
         $logEntry = new LogEntry(
             $logLevel,
-            (string)$message,
+            (string) $message,
             $context,
             new DateTimeImmutable()
         );
@@ -205,7 +205,7 @@ class Logger implements LoggerInterface
         $replace = [];
         foreach ($context as $key => $val) {
             if (is_string($val) || $val instanceof Stringable) {
-                $replace['{' . $key . '}'] = (string)$val;
+                $replace['{' . $key . '}'] = (string) $val;
             }
         }
         return strtr($message, $replace);

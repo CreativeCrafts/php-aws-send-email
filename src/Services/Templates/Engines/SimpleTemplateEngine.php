@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace CreativeCrafts\EmailService\Services\Templates\Engines;
 
 use CreativeCrafts\EmailService\Interfaces\TemplateEngineInterface;
@@ -22,7 +24,7 @@ class SimpleTemplateEngine implements TemplateEngineInterface
      */
     public function __construct(string $templateDir)
     {
-        if (!is_dir($templateDir)) {
+        if (! is_dir($templateDir)) {
             throw new InvalidArgumentException("Template directory does not exist: $templateDir");
         }
         $this->templateDir = rtrim($templateDir, '/\\');
@@ -38,7 +40,7 @@ class SimpleTemplateEngine implements TemplateEngineInterface
     public function load(string $templateName): TemplateInterface
     {
         $templatePath = $this->templateDir . DIRECTORY_SEPARATOR . $templateName . '.html';
-        if (!file_exists($templatePath)) {
+        if (! file_exists($templatePath)) {
             throw new InvalidArgumentException("Template file does not exist: $templatePath");
         }
 

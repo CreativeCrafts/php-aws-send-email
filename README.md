@@ -33,19 +33,90 @@ Ensure you have Composer installed on your system before running this command. T
 The EmailService class is the core of this package, providing a simple interface to send emails via Amazon SES.
 
 ```php
+use Aws\Ses\SesClient;
 use CreativeCrafts\EmailService\Services\EmailService;
 
-$emailService = new EmailService($sesClient, $logger, $rateLimiter);
-
-$emailService->send([
-    'to' => 'recipient@example.com',
-    'from' => 'sender@example.com',
-    'subject' => 'Test Email',
-    'body' => 'This is a test email sent using PHP AWS Send Email.',
+$sesClient = new SesClient([
+    'version' => 'latest',
+    'region'  => 'us-west-2',
+    /*'credentials' => [
+        'key'    => 'YOUR_AWS_ACCESS_KEY_ID',
+        'secret' => 'YOUR_AWS_SECRET_ACCESS_KEY',
+    ],*// Remove this line if you're using environment variables or IAM roles (Recommended)
 ]);
+
+$emailService = new EmailService($sesClient);
+
+$emailService->setSenderEmail('sender@example.com')
+    ->setRecipientEmail('recipient@example.com')
+    ->setSubject('Test Email')
+    ->setBodyText('This is a test email.')
+    ->sendEmail();
 ```
 Consider using this for sending transactional emails, notifications, or any automated email communication. 
 Remember to handle exceptions that might occur during the sending process.
+
+### Using Optional Features
+
+This package offers additional features to enhance your email sending capabilities. By leveraging a logger, rate limiter, and template engine, you can create a more robust and flexible email service.
+
+```php
+use Aws\Ses\SesClient;
+use CreativeCrafts\EmailService\Services\EmailService;
+use Psr\Log\LoggerInterface;
+use CreativeCrafts\EmailService\Interfaces\RateLimiterInterface;
+use CreativeCrafts\EmailService\Interfaces\TemplateEngineInterface;
+
+$sesClient = new SesClient([/* configuration */]);
+$logger = new YourLoggerImplementation();
+$rateLimiter = new YourRateLimiterImplementation();
+$templateEngine = new YourTemplateEngineImplementation();
+
+$emailService = new EmailService($sesClient, $logger, $rateLimiter, $templateEngine);
+
+$emailService->setSenderEmail('sender@example.com')
+    ->setRecipientEmail('recipient@example.com')
+    ->setSubject('Test Email')
+    ->setEmailTemplate('welcome', ['name' => 'John'])
+    ->sendEmail();
+```
+
+By incorporating these optional features, you can log email activities, control sending rates, and use templates for consistent and dynamic email content. 
+This approach is particularly useful for applications that send a high volume of emails or require detailed tracking and control over the email sending process.
+
+### Advanced Usage
+
+The EmailService class provides advanced features to handle more complex email sending scenarios. Here are some examples of how you can leverage these capabilities:
+
+#### Adding Attachments
+
+You can easily add file attachments to your emails using the `addAttachment method`. This is useful for sending documents, images, or any other files along with your email content.
+
+```php
+$emailService->addAttachment('/path/to/file.pdf');
+```
+
+This feature is particularly helpful when you need to send invoices, reports, or supplementary materials along with your emails. 
+You can add multiple attachments by calling this method multiple times.
+
+#### Asynchronous Sending
+
+For applications that need to handle high volumes of emails without blocking the main execution thread, the sendEmailAsync method provides an asynchronous approach to email sending.
+
+```php
+$promise = $emailService->sendEmailAsync();
+$promise->then(
+    function ($result) {
+        echo "Email sent! Message ID: " . $result['MessageId'];
+    },
+    function ($error) {
+        echo "An error occurred: " . $error->getMessage();
+    }
+);
+```
+
+Asynchronous sending is beneficial in scenarios where you're sending multiple emails simultaneously or when you want to improve the performance of your application by not waiting for the email to be sent before continuing execution. 
+This method returns a promise, allowing you to handle the success or failure of the email sending operation in a non-blocking manner.
 
 ## Using Templates
 
