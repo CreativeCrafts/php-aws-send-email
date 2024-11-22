@@ -94,30 +94,6 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Validates an email address.
-     * This method checks if the given email address is valid by using PHP's built-in
-     * filter_var function and verifying the existence of an MX record for the domain.
-     *
-     * @param string $email The email address to validate.
-     * @return bool Returns true if the email is valid and has a valid MX record,
-     *              false otherwise.
-     */
-    protected function validateEmail(string $email): bool
-    {
-        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return false;
-        }
-
-        $domain = strrchr($email, "@");
-        if ($domain === false) {
-            return false;
-        }
-
-        $domain = substr($domain, 1);
-        return checkdnsrr($domain, "MX");
-    }
-
-    /**
      * Sets the sender's name for the email.
      * This method sanitizes the provided name to prevent XSS attacks and sets it as the sender's name.
      * It uses htmlspecialchars to convert special characters to HTML entities.
@@ -208,32 +184,6 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Validates an attachment file for email sending.
-     * This function checks if the attachment file exists, its size is within
-     * the allowed limit, and its MIME type is among the allowed types.
-     *
-     * @param string $filePath The full path to the attachment file.
-     * @throws InvalidArgumentException If the file doesn't exist, exceeds the size limit,
-     *                                  or has an unsupported MIME type.
-     */
-    private function validateAttachment(string $filePath): void
-    {
-        if (! file_exists($filePath)) {
-            throw new InvalidArgumentException('Attachment file does not exist');
-        }
-
-        $fileSize = filesize($filePath);
-        if ($fileSize > self::MAX_ATTACHMENT_SIZE) {
-            throw new InvalidArgumentException('Attachment file size exceeds the maximum allowed size');
-        }
-
-        $mimeType = mime_content_type($filePath);
-        if (! in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
-            throw new InvalidArgumentException('Attachment file type is not allowed');
-        }
-    }
-
-    /**
      * Sets the email template and renders it with the provided variables.
      * This method loads a template, renders it with the given variables,
      * sets the rendered content as the HTML body of the email, and
@@ -253,23 +203,6 @@ class EmailService implements EmailServiceInterface
         $this->bodyHtml = $template->render($variables);
         $this->bodyText = $this->htmlToText($this->bodyHtml);
         return $this;
-    }
-
-    /**
-     * Converts HTML content to plain text.
-     * This function removes HTML tags, decodes HTML entities, and normalizes whitespace
-     * to create a plain text version of the given HTML content.
-     *
-     * @param string $html The HTML content to be converted to plain text.
-     * @return string The resulting plain text version of the input HTML.
-     */
-    private function htmlToText(string $html): string
-    {
-        $text = strip_tags($html);
-        $text = html_entity_decode($text);
-        /** @var string $text */
-        $text = preg_replace('/\s+/', ' ', $text);
-        return trim($text);
     }
 
     /**
@@ -312,6 +245,74 @@ class EmailService implements EmailServiceInterface
             ]);
             throw $exception;
         }
+    }
+
+    /**
+     * Sends an email asynchronously using Amazon SES.
+     * This method performs rate limiting checks, validates email data,
+     * constructs the message body, and then sends the email asynchronously.
+     * It logs the success or failure of the email sending operation.
+     *
+     * @return PromiseInterface A promise that resolves with the result of the email sending operation.
+     *                          The promise resolves with an array containing the 'MessageId' on success.
+     * @throws RuntimeException If the email sending rate limit is exceeded.
+     * @throws InvalidArgumentException If the email data validation fails.
+     * @throws AwsException If there's an error during the AWS SES API call.
+     */
+    public function sendEmailAsync(): PromiseInterface
+    {
+        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
+            'send_email',
+            $this->senderEmail
+        )) {
+            throw new RuntimeException('Email sending rate limit exceeded');
+        }
+
+        $this->fullEmailDataValidation();
+        $this->constructMessageBody();
+
+        return $this->sesClient->sendRawEmailAsync([
+            'RawMessage' => [
+                'Data' => implode("\n", $this->messageBody),
+            ],
+        ])->then(
+            function ($result) {
+                $this->logger->info('Email sent successfully', [
+                    'messageId' => $result['MessageId'],
+                ]);
+                return $result;
+            },
+            function ($exception): void {
+                $this->logger->error('Error sending email', [
+                    'error' => $exception->getMessage(),
+                ]);
+                throw $exception;
+            }
+        );
+    }
+
+    /**
+     * Validates an email address.
+     * This method checks if the given email address is valid by using PHP's built-in
+     * filter_var function and verifying the existence of an MX record for the domain.
+     *
+     * @param string $email The email address to validate.
+     * @return bool Returns true if the email is valid and has a valid MX record,
+     *              false otherwise.
+     */
+    protected function validateEmail(string $email): bool
+    {
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+
+        $domain = strrchr($email, "@");
+        if ($domain === false) {
+            return false;
+        }
+
+        $domain = substr($domain, 1);
+        return checkdnsrr($domain, "MX");
     }
 
     /**
@@ -429,46 +430,45 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Sends an email asynchronously using Amazon SES.
-     * This method performs rate limiting checks, validates email data,
-     * constructs the message body, and then sends the email asynchronously.
-     * It logs the success or failure of the email sending operation.
+     * Validates an attachment file for email sending.
+     * This function checks if the attachment file exists, its size is within
+     * the allowed limit, and its MIME type is among the allowed types.
      *
-     * @return PromiseInterface A promise that resolves with the result of the email sending operation.
-     *                          The promise resolves with an array containing the 'MessageId' on success.
-     * @throws RuntimeException If the email sending rate limit is exceeded.
-     * @throws InvalidArgumentException If the email data validation fails.
-     * @throws AwsException If there's an error during the AWS SES API call.
+     * @param string $filePath The full path to the attachment file.
+     * @throws InvalidArgumentException If the file doesn't exist, exceeds the size limit,
+     *                                  or has an unsupported MIME type.
      */
-    public function sendEmailAsync(): PromiseInterface
+    private function validateAttachment(string $filePath): void
     {
-        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
-            'send_email',
-            $this->senderEmail
-        )) {
-            throw new RuntimeException('Email sending rate limit exceeded');
+        if (! file_exists($filePath)) {
+            throw new InvalidArgumentException('Attachment file does not exist');
         }
 
-        $this->fullEmailDataValidation();
-        $this->constructMessageBody();
+        $fileSize = filesize($filePath);
+        if ($fileSize > self::MAX_ATTACHMENT_SIZE) {
+            throw new InvalidArgumentException('Attachment file size exceeds the maximum allowed size');
+        }
 
-        return $this->sesClient->sendRawEmailAsync([
-            'RawMessage' => [
-                'Data' => implode("\n", $this->messageBody),
-            ],
-        ])->then(
-            function ($result) {
-                $this->logger->info('Email sent successfully', [
-                    'messageId' => $result['MessageId'],
-                ]);
-                return $result;
-            },
-            function ($exception): void {
-                $this->logger->error('Error sending email', [
-                    'error' => $exception->getMessage(),
-                ]);
-                throw $exception;
-            }
-        );
+        $mimeType = mime_content_type($filePath);
+        if (! in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
+            throw new InvalidArgumentException('Attachment file type is not allowed');
+        }
+    }
+
+    /**
+     * Converts HTML content to plain text.
+     * This function removes HTML tags, decodes HTML entities, and normalizes whitespace
+     * to create a plain text version of the given HTML content.
+     *
+     * @param string $html The HTML content to be converted to plain text.
+     * @return string The resulting plain text version of the input HTML.
+     */
+    private function htmlToText(string $html): string
+    {
+        $text = strip_tags($html);
+        $text = html_entity_decode($text);
+        /** @var string $text */
+        $text = preg_replace('/\s+/', ' ', $text);
+        return trim($text);
     }
 }
