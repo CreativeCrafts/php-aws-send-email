@@ -42,7 +42,7 @@ $sesClient = new SesClient([
     /*'credentials' => [
         'key'    => 'YOUR_AWS_ACCESS_KEY_ID',
         'secret' => 'YOUR_AWS_SECRET_ACCESS_KEY',
-    ],*// Remove this line if you're using environment variables or IAM roles (Recommended)
+    ],*// Remove the 'credentials' array if you're using environment variables or IAM roles (Recommended)
 ]);
 
 $emailService = new EmailService($sesClient);
