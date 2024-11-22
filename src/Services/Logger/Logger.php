@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace CreativeCrafts\EmailService\Services\Logger;
 
 use CreativeCrafts\EmailService\DTO\LogEntry;
@@ -57,79 +59,6 @@ class Logger implements LoggerInterface
             new DateTimeImmutable()
         );
         $this->writeLog($this->formatLogEntry($logEntry));
-    }
-
-    /**
-     * Normalizes the log level to ensure it's a valid LogLevel enum.
-     *
-     * @param mixed $level The log level to normalize.
-     * @return LogLevel The normalized LogLevel enum.
-     * @throws InvalidArgumentException If an invalid log level is provided.
-     */
-    private function normalizeLogLevel(mixed $level): LogLevel
-    {
-        if ($level instanceof LogLevel) {
-            return $level;
-        }
-
-        if (is_string($level) || is_int($level)) {
-            try {
-                return LogLevel::from($level);
-            } catch (ValueError $e) {
-                throw new InvalidArgumentException("Invalid log level provided: $level", 0, $e);
-            }
-        }
-
-        throw new InvalidArgumentException('Invalid log level type. Expected LogLevel enum, string, or int.');
-    }
-
-    /**
-     * Writes a formatted log message to the log file.
-     *
-     * @param string $message The formatted log message to write.
-     * @throws RuntimeException If unable to write to the log file.
-     */
-    private function writeLog(string $message): void
-    {
-        $result = file_put_contents($this->logFile, $message, FILE_APPEND);
-        if ($result === false) {
-            throw new RuntimeException('Unable to write to log file: ' . $this->logFile);
-        }
-    }
-
-    /**
-     * Formats a LogEntry object into a string for logging.
-     *
-     * @param LogEntry $entry The LogEntry object to format.
-     * @return string The formatted log entry as a string.
-     */
-    private function formatLogEntry(LogEntry $entry): string
-    {
-        $message = $this->interpolate($entry->message, $entry->context);
-        return sprintf(
-            "[%s] %s: %s\n",
-            $entry->timestamp->format('Y-m-d\TH:i:s.uP'),
-            $entry->level->value,
-            $message
-        );
-    }
-
-    /**
-     * Interpolates context values into the message placeholders.
-     *
-     * @param string $message The message with placeholders.
-     * @param array $context An array of context data to replace placeholders.
-     * @return string The interpolated message.
-     */
-    private function interpolate(string $message, array $context): string
-    {
-        $replace = [];
-        foreach ($context as $key => $val) {
-            if (is_string($val) || $val instanceof Stringable) {
-                $replace['{' . $key . '}'] = (string)$val;
-            }
-        }
-        return strtr($message, $replace);
     }
 
     /**
@@ -207,5 +136,78 @@ class Logger implements LoggerInterface
     public function debug(string|Stringable $message, array $context = []): void
     {
         $this->log(LogLevel::DEBUG, $message, $context);
+    }
+
+    /**
+     * Normalizes the log level to ensure it's a valid LogLevel enum.
+     *
+     * @param mixed $level The log level to normalize.
+     * @return LogLevel The normalized LogLevel enum.
+     * @throws InvalidArgumentException If an invalid log level is provided.
+     */
+    private function normalizeLogLevel(mixed $level): LogLevel
+    {
+        if ($level instanceof LogLevel) {
+            return $level;
+        }
+
+        if (is_string($level) || is_int($level)) {
+            try {
+                return LogLevel::from($level);
+            } catch (ValueError $e) {
+                throw new InvalidArgumentException("Invalid log level provided: $level", 0, $e);
+            }
+        }
+
+        throw new InvalidArgumentException('Invalid log level type. Expected LogLevel enum, string, or int.');
+    }
+
+    /**
+     * Writes a formatted log message to the log file.
+     *
+     * @param string $message The formatted log message to write.
+     * @throws RuntimeException If unable to write to the log file.
+     */
+    private function writeLog(string $message): void
+    {
+        $result = file_put_contents($this->logFile, $message, FILE_APPEND);
+        if ($result === false) {
+            throw new RuntimeException('Unable to write to log file: ' . $this->logFile);
+        }
+    }
+
+    /**
+     * Formats a LogEntry object into a string for logging.
+     *
+     * @param LogEntry $entry The LogEntry object to format.
+     * @return string The formatted log entry as a string.
+     */
+    private function formatLogEntry(LogEntry $entry): string
+    {
+        $message = $this->interpolate($entry->message, $entry->context);
+        return sprintf(
+            "[%s] %s: %s\n",
+            $entry->timestamp->format('Y-m-d\TH:i:s.uP'),
+            $entry->level->value,
+            $message
+        );
+    }
+
+    /**
+     * Interpolates context values into the message placeholders.
+     *
+     * @param string $message The message with placeholders.
+     * @param array $context An array of context data to replace placeholders.
+     * @return string The interpolated message.
+     */
+    private function interpolate(string $message, array $context): string
+    {
+        $replace = [];
+        foreach ($context as $key => $val) {
+            if (is_string($val) || $val instanceof Stringable) {
+                $replace['{' . $key . '}'] = (string)$val;
+            }
+        }
+        return strtr($message, $replace);
     }
 }

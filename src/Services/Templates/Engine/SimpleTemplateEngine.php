@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace CreativeCrafts\EmailService\Services\Templates\Engine;
 
 use CreativeCrafts\EmailService\Interfaces\TemplateEngineInterface;
