@@ -1,6 +1,6 @@
 <?php
 
-namespace CreativeCrafts\EmailService\Services\Templates\Engine;
+namespace CreativeCrafts\EmailService\Services\Templates\Engines;
 
 use CreativeCrafts\EmailService\Interfaces\TemplateEngineInterface;
 use CreativeCrafts\EmailService\Interfaces\TemplateInterface;

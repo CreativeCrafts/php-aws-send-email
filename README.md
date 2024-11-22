@@ -1,18 +1,20 @@
-# This is a handy package the can send email via AWS SES
+# PHP AWS Send Email
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/creativecrafts/php-aws-send-email.svg?style=flat-square)](https://packagist.org/packages/creativecrafts/php-aws-send-email)
 [![Tests](https://img.shields.io/github/actions/workflow/status/creativecrafts/php-aws-send-email/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/creativecrafts/php-aws-send-email/actions/workflows/run-tests.yml)
 [![Total Downloads](https://img.shields.io/packagist/dt/creativecrafts/php-aws-send-email.svg?style=flat-square)](https://packagist.org/packages/creativecrafts/php-aws-send-email)
 
-This is where your description should go. Try and limit it to a paragraph or two. Consider adding a small example.
+A powerful and flexible PHP package for sending emails via Amazon SES (Simple Email Service) with advanced features including templating, logging, and rate limiting. This package is designed to simplify email operations while providing robust controls and customization options.
 
-## Support us
+## Features
 
-[<img src="https://github-ads.s3.eu-central-1.amazonaws.com/php-aws-send-email.jpg?t=1" width="419px" />](https://spatie.be/github-ad-click/php-aws-send-email)
+- Send emails using Amazon SES
+- Template support (Simple and Advanced)
+- Logging capabilities
+- Rate limiting (In-Memory and Redis options)
+- Easy to use and integrate
 
-We invest a lot of resources into creating [best in class open source packages](https://spatie.be/open-source). You can support us by [buying one of our paid products](https://spatie.be/open-source/support-us).
-
-We highly appreciate you sending us a postcard from your hometown, mentioning which of our package(s) you are using. You'll find our address on [our contact page](https://spatie.be/about-us). We publish all received postcards on [our virtual postcard wall](https://spatie.be/open-source/postcards).
+Our features are designed to cater to a wide range of email sending needs, from simple transactional emails to complex, templated marketing campaigns.
 
 ## Installation
 
@@ -22,12 +24,148 @@ You can install the package via composer:
 composer require creativecrafts/php-aws-send-email
 ```
 
+Ensure you have Composer installed on your system before running this command. This package requires PHP 8.2 or higher.
+
 ## Usage
 
+### Basic Usage
+
+The EmailService class is the core of this package, providing a simple interface to send emails via Amazon SES.
+
 ```php
-$skeleton = new CreativeCrafts\EmailService();
-echo $skeleton->echoPhrase('Hello, CreativeCrafts!');
+use CreativeCrafts\EmailService\Services\EmailService;
+
+$emailService = new EmailService($sesClient, $logger, $rateLimiter);
+
+$emailService->send([
+    'to' => 'recipient@example.com',
+    'from' => 'sender@example.com',
+    'subject' => 'Test Email',
+    'body' => 'This is a test email sent using PHP AWS Send Email.',
+]);
 ```
+Consider using this for sending transactional emails, notifications, or any automated email communication. 
+Remember to handle exceptions that might occur during the sending process.
+
+## Using Templates
+
+Templates allow you to create reusable email content, making it easier to maintain consistent messaging across your application. 
+This package supports two types of templates: Simple and Advanced.
+
+### Simple Templates
+
+Simple templates are best for straightforward, text-based emails with basic variable substitution.
+
+```php
+use CreativeCrafts\EmailService\Services\Templates\SimpleTemplate;
+
+$template = new SimpleTemplate('Hello, {name}!');
+$renderedContent = $template->render(['name' => 'John']);
+```
+
+Use simple templates for welcome emails, password reset notifications, or any email where the content structure remains largely the same with only a few changing variables.
+
+### Advanced Template
+
+Advanced templates offer more flexibility, allowing you to use PHP in your templates for complex logic and data manipulation.
+
+```php
+use CreativeCrafts\EmailService\Services\Templates\AdvancedTemplate;
+
+$template = new AdvancedTemplate('/path/to/template.php');
+$renderedContent = $template->render(['name' => 'John', 'age' => 30]);
+```
+
+Advanced templates are ideal for emails that require conditional content, loops, or complex data presentation. 
+They're great for personalized newsletters, detailed reports, or any email where the content structure might vary significantly based on the data.
+
+## Template Engines
+
+Template engines provide a way to manage and render multiple templates efficiently. 
+This package includes two template engines: SimpleTemplateEngine and AdvancedTemplateEngine.
+
+### Simple Template Engine
+
+The Simple Template Engine is perfect for managing multiple simple templates.
+
+ ```php
+use CreativeCrafts\EmailService\Services\Templates\Engines\SimpleTemplateEngine;
+
+$engine = new SimpleTemplateEngine('/path/to/templates');
+$template = $engine->load('welcome');
+$renderedContent = $template->render(['name' => 'John']);
+```
+Use this when you have multiple simple email templates and want to keep them organized in separate files. 
+It's great for managing a suite of transactional email templates.
+
+### Advanced Template Engine
+
+The Advanced Template Engine allows you to work with more complex, PHP-based templates.
+
+```php
+use CreativeCrafts\EmailService\Services\Templates\Engines\AdvancedTemplateEngine;
+
+$engine = new AdvancedTemplateEngine('/path/to/templates');
+$template = $engine->load('user_profile');
+$renderedContent = $template->render(['user' => $userObject]);
+```
+
+This is ideal when you need to generate complex, data-driven emails. It's particularly useful for applications that send highly personalized or dynamic content, such as user reports or customized newsletters.
+
+## Logging
+
+Logging is crucial for tracking email operations, troubleshooting, and maintaining an audit trail.
+
+```php
+use CreativeCrafts\EmailService\Services\Logger\Logger;
+
+$logger = new Logger('/path/to/email.log');
+$logger->info('Email sent successfully', ['to' => 'recipient@example.com']);
+```
+
+Use logging to keep track of successful sends, failures, and other important events in your email operations. 
+This can be invaluable for debugging and monitoring your application's email functionality.
+
+## Rate Limiting
+
+Rate limiting helps you control the volume of emails sent, ensuring you stay within Amazon SES limits and avoid overwhelming recipients.
+
+### In-Memory Rate Limiter
+
+Suitable for single-server setups or applications with low to moderate email volume.
+
+```php
+use CreativeCrafts\EmailService\Services\RateLimiter\InMemoryRateLimiter;
+
+$rateLimiter = new InMemoryRateLimiter(100, 3600); // 100 emails per hour
+```
+
+Use this for smaller applications or when you don't need to share rate limit data across multiple servers. Be aware that the limits reset if your application restarts.
+
+### Redis Rate Limiter
+
+Ideal for distributed systems or high-volume applications that require persistent and shared rate limiting.
+
+```php
+use CreativeCrafts\EmailService\Services\RateLimiter\RedisRateLimiter;
+
+$redis = new Redis();
+$redis->connect('127.0.0.1', 6379);
+$rateLimiter = new RedisRateLimiter($redis, 'email_rate_limit', 100, 3600); // 100 emails per hour
+```
+
+Use this when you have multiple application servers and need to enforce a global rate limit. 
+It's also useful for maintaining rate limits across application restarts.
+
+## Configuration
+Proper configuration is key to getting the most out of this package. Here's what to consider for each component:
+
+    - EmailService: Ensure your SES client is properly configured with your AWS credentials. Choose appropriate logger and rate limiter implementations based on your needs.
+    - Logger: Choose a log file path that's writable by your application and easily accessible for monitoring.
+    - InMemoryRateLimiter: Set limits that align with your SES account limits and expected email volumes.
+    - RedisRateLimiter: Ensure your Redis connection is stable and consider using a dedicated Redis instance for rate limiting in high-volume scenarios.
+    - SimpleTemplateEngine and AdvancedTemplateEngine: Organize your templates in a logical directory structure for easy management.
+
 
 ## Testing
 
