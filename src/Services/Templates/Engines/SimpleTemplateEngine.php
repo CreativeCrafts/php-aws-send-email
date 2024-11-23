@@ -26,13 +26,16 @@ class SimpleTemplateEngine implements TemplateEngineInterface
      * @param string $templateExtension The file extension for template files (default is 'html').
      * @throws InvalidArgumentException If the specified template directory does not exist.
      */
-    public function __construct(string $templateDir, string $templateExtension = 'html')
+    public function __construct(string $templateDir, string $templateExtension = '.html')
     {
         if (!is_dir($templateDir)) {
             throw new InvalidArgumentException("Template directory does not exist: $templateDir");
         }
         $this->templateDir = rtrim($templateDir, '/\\');
-        $this->templateExtension = $templateExtension;
+        $this->templateExtension = !str_contains(
+            $templateExtension,
+            '.'
+        ) ? '.' . $templateExtension : $templateExtension;
     }
 
     /**

@@ -162,8 +162,8 @@ The Simple Template Engine is perfect for managing multiple simple templates.
  ```php
 use CreativeCrafts\EmailService\Services\Templates\Engines\SimpleTemplateEngine;
 
-// Optionally, you can specify the file extension if your templates use a different extension. default is html
-$templateExtension = 'phtml';
+// Optionally, you can specify the file extension if your templates use a different extension. default is .html
+$templateExtension = '.phtml';
 $engine = new SimpleTemplateEngine('/path/to/templates', $templateExtension);
 $template = $engine->load('welcome');
 $renderedContent = $template->render(['name' => 'John']);
@@ -269,8 +269,8 @@ The Advanced Template Engine allows you to work with more complex, PHP-based tem
 
 ```php
 use CreativeCrafts\EmailService\Services\Templates\Engines\AdvancedTemplateEngine;
-// Optionally, you can specify the file extension if your templates use a different extension. default is html
-$templateExtension = 'phtml';
+// Optionally, you can specify the file extension if your templates use a different extension. default is .html
+$templateExtension = '.phtml';
 $engine = new AdvancedTemplateEngine('/path/to/templates', $templateExtension);
 $template = $engine->load('user_profile');
 $renderedContent = $template->render(['user' => $userObject]);
