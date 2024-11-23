@@ -5,6 +5,14 @@ All notable changes to `php-aws-send-email` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2024-11-23
+
+### Added
+- feat(template-engines): allow customizable template file extensions
+- Updated 'SimpleTemplateEngine'and 'AdvancedTemplateEngine' to support customizable template file extensions.
+- Modified constructors to accept an optional parameter for the template file extension, defaulting to '.html'.
+- Updated README to document the new feature and provide examples of usage.
+
 ## [0.5.0] - 2024-11-23
 - Updated README.md with detailed usage instructions.
 
