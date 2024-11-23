@@ -265,18 +265,45 @@ This approach keeps the template simple and focused on the email content structu
 
 ### Advanced Template Engine
 
+### Advanced Template Engine
+
 The Advanced Template Engine allows you to work with more complex, PHP-based templates.
 
 ```php
 use CreativeCrafts\EmailService\Services\Templates\Engines\AdvancedTemplateEngine;
-// Optionally, you can specify the file extension if your templates use a different extension. default is .html
-$templateExtension = '.phtml';
-$engine = new AdvancedTemplateEngine('/path/to/templates', $templateExtension);
+
+// Initialize the AdvancedTemplateEngine with template and partial directories
+$templateDir = '/path/to/templates';
+$partialDir = '/path/to/partials';
+$templateExtension = '.phtml'; // Optional, default is '.html'
+
+$engine = new AdvancedTemplateEngine($templateDir, $partialDir, $templateExtension);
 $template = $engine->load('user_profile');
 $renderedContent = $template->render(['user' => $userObject]);
 ```
-
 This is ideal when you need to generate complex, data-driven emails. It's particularly useful for applications that send highly personalized or dynamic content, such as user reports or customized newsletters.
+
+The AdvancedTemplateEngine allows you to:
+    - Use PHP code directly in your templates
+    - Include partial templates
+    - Access variables using object-like syntax
+    - Implement complex logic within your templates
+
+```html
+<!-- user_profile.phtml -->
+<h1>Welcome, <?= $this->user->name ?>!</h1>
+
+<p>Your account details:</p>
+<ul>
+    <li>Email: <?= $this->user->email ?></li>
+    <li>Joined: <?= $this->user->joinDate->format('F j, Y') ?></li>
+</ul>
+
+<?php if ($this->user->isPremium): ?>
+    <?= $this->partial('premium_features', ['user' => $this->user]) ?>
+<?php endif; ?>
+```
+In this example, the template uses PHP to display user information, format dates, and conditionally include a partial template for premium users.
 
 ### Usage with EmailService
 
@@ -333,7 +360,7 @@ try {
 ```
 Now, let's create an example of an advanced template that this code might use:
 
-```php
+```html
 // order_confirmation.html or order_confirmation.php or order_confirmation.phtml
 <!DOCTYPE html>
 <html lang="en">
