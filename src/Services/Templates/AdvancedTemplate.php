@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CreativeCrafts\EmailService\Services\Templates;
 
 use CreativeCrafts\EmailService\Interfaces\TemplateInterface;
+use RuntimeException;
 
 class AdvancedTemplate implements TemplateInterface
 {
@@ -28,19 +29,36 @@ class AdvancedTemplate implements TemplateInterface
      *
      * @param array $variables An associative array of variables to be made available to the template.
      * @return string The rendered template content as a string.
+     * @throws RuntimeException If the template file does not exist.
      */
     public function render(array $variables): string
     {
+        if (!file_exists($this->templatePath)) {
+            throw new RuntimeException("Template file does not exist: {$this->templatePath}");
+        }
+
+        $templateHelpers = [
+            'templatePath' => $this->templatePath,
+        ];
+
+        $allVariables = array_merge($variables, $templateHelpers);
+
         ob_start();
-        (static function ($__templatePath, $__variables): void {
-            foreach ($__variables as $__key => $__value) {
-                $$__key = $__value;
+        (function ($__templatePath, $__variables): void {
+            foreach ($__variables as $key => $value) {
+                $$key = $value;
             }
             include $__templatePath;
         })(
             $this->templatePath,
-            $variables
+            $allVariables
         );
-        return ob_get_clean() ?: '';
+        $content = ob_get_clean();
+
+        if ($content === false) {
+            throw new RuntimeException("Failed to capture output buffer while rendering template.");
+        }
+
+        return $content;
     }
 }
