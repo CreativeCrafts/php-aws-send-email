@@ -15,19 +15,24 @@ use InvalidArgumentException;
 class SimpleTemplateEngine implements TemplateEngineInterface
 {
     private string $templateDir;
+    private string $templateExtension;
 
     /**
-     * Constructor for SimpleTemplateEngine.
+     * Initializes the SimpleTemplateEngine with a template directory and file extension.
+     * This constructor sets up the engine by specifying where to find templates and what file extension they use.
+     * It validates the provided template directory and normalizes the path.
      *
-     * @param string $templateDir The directory path where template files are stored.
+     * @param string $templateDir The directory where template files are stored.
+     * @param string $templateExtension The file extension for template files (default is 'html').
      * @throws InvalidArgumentException If the specified template directory does not exist.
      */
-    public function __construct(string $templateDir)
+    public function __construct(string $templateDir, string $templateExtension = 'html')
     {
-        if (! is_dir($templateDir)) {
+        if (!is_dir($templateDir)) {
             throw new InvalidArgumentException("Template directory does not exist: $templateDir");
         }
         $this->templateDir = rtrim($templateDir, '/\\');
+        $this->templateExtension = $templateExtension;
     }
 
     /**
@@ -39,8 +44,8 @@ class SimpleTemplateEngine implements TemplateEngineInterface
      */
     public function load(string $templateName): TemplateInterface
     {
-        $templatePath = $this->templateDir . DIRECTORY_SEPARATOR . $templateName . '.html';
-        if (! file_exists($templatePath)) {
+        $templatePath = $this->templateDir . DIRECTORY_SEPARATOR . $templateName . $this->templateExtension;
+        if (!file_exists($templatePath)) {
             throw new InvalidArgumentException("Template file does not exist: $templatePath");
         }
 
