@@ -24,6 +24,8 @@ class EmailService implements EmailServiceInterface
 
     private const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 
+    protected string $returnPath = '';
+
     private SesClient $sesClient;
 
     private LoggerInterface $logger;
@@ -50,7 +52,9 @@ class EmailService implements EmailServiceInterface
 
     private array $messageBody = [];
 
-    private string $mimeType = 'application/octet-stream';
+    private string $mimeType = 'application/pdf';
+
+    private array $emailHeaders = [];
 
     /**
      * Initializes the EmailService with required dependencies.
@@ -77,20 +81,20 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Sets the sender's email address for the email.
-     * This method validates the provided email address before setting it.
-     * If the email is invalid, an exception is thrown.
+     * Sets the return path for the email.
+     * This method sets the return path (also known as the bounce address) for the email.
+     * It validates the provided email address before setting it.
      *
-     * @param string $email The email address of the sender.
-     * @return self Returns the current instance of the class for method chaining.
-     * @throws InvalidArgumentException If the provided email is invalid.
+     * @param string $returnPath The email address to be used as the return path.
+     * @return self Returns the current instance to allow method chaining.
+     * @throws InvalidArgumentException If the provided email address is invalid.
      */
-    public function setSenderEmail(string $email): self
+    public function setReturnPath(string $returnPath): self
     {
-        if (!$this->validateEmail($email)) {
-            throw new InvalidArgumentException('Invalid sender email');
+        if (! $this->validateEmail($returnPath)) {
+            throw new InvalidArgumentException('Invalid email address');
         }
-        $this->senderEmail = $email;
+        $this->returnPath = $returnPath;
         return $this;
     }
 
@@ -105,7 +109,7 @@ class EmailService implements EmailServiceInterface
      */
     protected function validateEmail(string $email): bool
     {
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return false;
         }
 
@@ -116,6 +120,24 @@ class EmailService implements EmailServiceInterface
 
         $domain = substr($domain, 1);
         return checkdnsrr($domain, "MX");
+    }
+
+    /**
+     * Sets the sender's email address for the email.
+     * This method validates the provided email address before setting it.
+     * If the email is invalid, an exception is thrown.
+     *
+     * @param string $email The email address of the sender.
+     * @return self Returns the current instance of the class for method chaining.
+     * @throws InvalidArgumentException If the provided email is invalid.
+     */
+    public function setSenderEmail(string $email): self
+    {
+        if (! $this->validateEmail($email)) {
+            throw new InvalidArgumentException('Invalid sender email');
+        }
+        $this->senderEmail = $email;
+        return $this;
     }
 
     /**
@@ -143,7 +165,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setRecipientEmail(string $email): self
     {
-        if (!$this->validateEmail($email)) {
+        if (! $this->validateEmail($email)) {
             throw new InvalidArgumentException('Invalid recipient email');
         }
         $this->recipientEmail = $email;
@@ -191,7 +213,7 @@ class EmailService implements EmailServiceInterface
      */
     private function validateAttachment(string $filePath): void
     {
-        if (!file_exists($filePath)) {
+        if (! file_exists($filePath)) {
             throw new InvalidArgumentException('Attachment file does not exist');
         }
 
@@ -201,7 +223,7 @@ class EmailService implements EmailServiceInterface
         }
 
         $mimeType = mime_content_type($filePath);
-        if (!in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
+        if (! in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
             throw new InvalidArgumentException('Attachment file type is not allowed');
         }
     }
@@ -219,7 +241,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setEmailTemplate(string $templateName, array $variables): self
     {
-        if (!$this->templateEngine instanceof TemplateEngineInterface) {
+        if (! $this->templateEngine instanceof TemplateEngineInterface) {
             throw new RuntimeException('Template engine is not set');
         }
         try {
@@ -229,7 +251,7 @@ class EmailService implements EmailServiceInterface
             $this->setBodyHtml($renderedHtml);
             $this->setBodyText($this->htmlToText($renderedHtml));
         } catch (Exception $e) {
-            throw new RuntimeException('Error rendering template: ' . $e->getMessage());
+            throw new RuntimeException('Error rendering template: ' . $e->getMessage(), $e->getCode(), $e);
         }
 
         return $this;
@@ -294,20 +316,24 @@ class EmailService implements EmailServiceInterface
      */
     public function sendEmail(): Result
     {
-        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
-                'send_email',
-                $this->senderEmail
-            )) {
+        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
+            'send_email',
+            $this->senderEmail
+        )) {
             throw new RuntimeException('Email sending rate limit exceeded');
         }
 
         $this->fullEmailDataValidation();
+        $this->setEmailHeaders();
         $this->constructMessageBody();
+
+        $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n" . implode("\r\n", $this->messageBody);
+        $rawMessageBase64 = base64_encode($rawMessage);
 
         try {
             $result = $this->sesClient->sendRawEmail([
                 'RawMessage' => [
-                    'Data' => implode("\n", $this->messageBody),
+                    'Data' => $rawMessageBase64,
                 ],
             ]);
             $this->logger->info('Email sent successfully', [
@@ -336,10 +362,10 @@ class EmailService implements EmailServiceInterface
      */
     protected function fullEmailDataValidation(): void
     {
-        if (!$this->validateEmail($this->senderEmail)) {
+        if (! $this->validateEmail($this->senderEmail)) {
             throw new InvalidArgumentException('A valid sender email is required');
         }
-        if (!$this->validateEmail($this->recipientEmail)) {
+        if (! $this->validateEmail($this->recipientEmail)) {
             throw new InvalidArgumentException('A valid recipient email is required');
         }
         if ($this->subject === '' || $this->subject === '0') {
@@ -351,43 +377,23 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Constructs the message body for the email.
-     * This method builds the MIME-compliant message body structure for the email,
-     * including headers, text and HTML content, and prepares for attachments.
-     * It sets up the multipart structure with appropriate boundaries and content types.
-     * After constructing the main body, it processes any attachments and finalizes
-     * the message structure.
+     * Sets the email headers for the message.
+     * This method populates the $emailHeaders array with necessary headers for the email,
+     * including From, Reply-To, Return-Path, Subject, MIME-Version, and Content-Type.
+     * It uses class properties to set these values, ensuring that the email is properly
+     * formatted for sending.
      */
-    protected function constructMessageBody(): void
+    protected function setEmailHeaders(): void
     {
-        $this->messageBody = [
-            'From: ' . $this->source(),
+        $this->emailHeaders = [
+            'From' => $this->source(),
+            'Reply-To' => $this->source(),
             'To: ' . $this->recipientEmail,
-            'Subject: ' . $this->subject,
-            'MIME-Version: 1.0',
-            'Content-Type: multipart/mixed; boundary="' . $this->boundary . '"',
-            '',
-            '--' . $this->boundary,
-            'Content-Type: multipart/alternative; boundary="alt-' . $this->boundary . '"',
-            '',
-            '--alt-' . $this->boundary,
-            'Content-Type: text/plain; charset="UTF-8"',
-            'Content-Transfer-Encoding: 7bit',
-            '',
-            $this->bodyText,
-            '',
-            '--alt-' . $this->boundary,
-            'Content-Type: text/html; charset="UTF-8"',
-            'Content-Transfer-Encoding: 7bit',
-            '',
-            $this->bodyHtml,
-            '',
-            '--alt-' . $this->boundary . '--',
+            'Subject: =?UTF-8?B?' . base64_encode($this->subject) . '?=',
+            'Return-Path' => $this->returnPath,
+            'MIME-Version' => '1.0',
+            'Content-Type' => 'multipart/alternative; boundary="' . $this->boundary . '"',
         ];
-
-        $this->processEmailAttachments();
-
-        $this->messageBody[] = '--' . $this->boundary . '--';
     }
 
     /**
@@ -406,6 +412,35 @@ class EmailService implements EmailServiceInterface
             return sprintf('%s <%s>', $this->senderName, $this->senderEmail);
         }
         return $this->senderEmail;
+    }
+
+    /**
+     * Constructs the message body for the email.
+     * This method builds the MIME-compliant message body structure for the email,
+     * including headers, text and HTML content, and prepares for attachments.
+     * It sets up the multipart structure with appropriate boundaries and content types.
+     * After constructing the main body, it processes any attachments and finalizes
+     * the message structure.
+     */
+    protected function constructMessageBody(): void
+    {
+        // Add the plain text part
+        $this->messageBody[] = "--{$this->boundary}\r\n";
+        $this->messageBody[] = "Content-Type: text/plain; charset=UTF-8\r\n";
+        $this->messageBody[] = "Content-Transfer-Encoding: base64\r\n\r\n";
+        $this->messageBody[] = chunk_split(base64_encode($this->bodyText)) . "\r\n";
+
+        // Add the HTML part
+        $this->messageBody[] = "--{$this->boundary}\r\n";
+        $this->messageBody[] = "Content-Type: text/plain; charset=UTF-8\r\n";
+        $this->messageBody[] = "Content-Transfer-Encoding: base64\r\n\r\n";
+        $this->messageBody[] = chunk_split(base64_encode($this->bodyHtml)) . "\r\n";
+
+        // Add any attachments
+        $this->processEmailAttachments();
+
+        // End the message
+        $this->messageBody[] = "--{$this->boundary}--";
     }
 
     /**
@@ -450,10 +485,10 @@ class EmailService implements EmailServiceInterface
      */
     public function sendEmailAsync(): PromiseInterface
     {
-        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
-                'send_email',
-                $this->senderEmail
-            )) {
+        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
+            'send_email',
+            $this->senderEmail
+        )) {
             throw new RuntimeException('Email sending rate limit exceeded');
         }
 

@@ -15,6 +15,7 @@ use InvalidArgumentException;
 class SimpleTemplateEngine implements TemplateEngineInterface
 {
     private string $templateDir;
+
     private string $templateExtension;
 
     /**
@@ -28,14 +29,14 @@ class SimpleTemplateEngine implements TemplateEngineInterface
      */
     public function __construct(string $templateDir, string $templateExtension = '.html')
     {
-        if (!is_dir($templateDir)) {
+        if (! is_dir($templateDir)) {
             throw new InvalidArgumentException("Template directory does not exist: $templateDir");
         }
         $this->templateDir = rtrim($templateDir, '/\\');
-        $this->templateExtension = !str_contains(
+        $this->templateExtension = str_contains(
             $templateExtension,
             '.'
-        ) ? '.' . $templateExtension : $templateExtension;
+        ) ? $templateExtension : '.' . $templateExtension;
     }
 
     /**
@@ -48,7 +49,7 @@ class SimpleTemplateEngine implements TemplateEngineInterface
     public function load(string $templateName): TemplateInterface
     {
         $templatePath = $this->templateDir . DIRECTORY_SEPARATOR . $templateName . $this->templateExtension;
-        if (!file_exists($templatePath)) {
+        if (! file_exists($templatePath)) {
             throw new InvalidArgumentException("Template file does not exist: $templatePath");
         }
 

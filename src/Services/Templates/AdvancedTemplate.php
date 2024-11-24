@@ -10,10 +10,12 @@ use RuntimeException;
 class AdvancedTemplate implements TemplateInterface
 {
     private string $templatePath;
+
     private string $partialDir;
 
     private string $templateExtension;
-    private array $variables;
+
+    private array $variables = [];
 
     /**
      * Constructor for the AdvancedTemplate class.
@@ -25,11 +27,10 @@ class AdvancedTemplate implements TemplateInterface
     {
         $this->templatePath = $templatePath;
         $this->partialDir = rtrim($partialDir, '/\\');
-        $this->templateExtension = !str_contains(
+        $this->templateExtension = str_contains(
             $templateExtension,
             '.'
-        ) ? '.' . $templateExtension : $templateExtension;
-        $this->variables = [];
+        ) ? $templateExtension : '.' . $templateExtension;
     }
 
     /**
@@ -41,7 +42,7 @@ class AdvancedTemplate implements TemplateInterface
      */
     public function render(array $variables): string
     {
-        if (!file_exists($this->templatePath)) {
+        if (! file_exists($this->templatePath)) {
             throw new RuntimeException("Template file does not exist: {$this->templatePath}");
         }
 
@@ -86,7 +87,7 @@ class AdvancedTemplate implements TemplateInterface
     {
         $partialPath = $this->partialDir . DIRECTORY_SEPARATOR . $partialName . $this->templateExtension;
 
-        if (!file_exists($partialPath)) {
+        if (! file_exists($partialPath)) {
             throw new RuntimeException("Partial template file does not exist: {$partialPath}");
         }
 
