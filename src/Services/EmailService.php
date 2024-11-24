@@ -295,12 +295,13 @@ class EmailService implements EmailServiceInterface
      */
     private function htmlToText(string $html): string
     {
+        $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
+        $html = preg_replace('/<\/p>/i', "\n\n", $html);
         $text = strip_tags($html);
-        $text = html_entity_decode($text);
-        /** @var string $text */
-        $text = preg_replace('/\s+/', ' ', $text);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         return trim($text);
     }
+
 
     /**
      * Sends an email using Amazon SES.
