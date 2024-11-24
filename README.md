@@ -4,21 +4,24 @@
 [![Tests](https://img.shields.io/github/actions/workflow/status/creativecrafts/php-aws-send-email/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/creativecrafts/php-aws-send-email/actions/workflows/run-tests.yml)
 [![Total Downloads](https://img.shields.io/packagist/dt/creativecrafts/php-aws-send-email.svg?style=flat-square)](https://packagist.org/packages/creativecrafts/php-aws-send-email)
 
-A powerful and flexible PHP package for sending emails via Amazon SES (Simple Email Service) with advanced features including templating, logging, and rate limiting. This package is designed to simplify email operations while providing robust controls and customization options.
+A powerful and flexible PHP package for sending emails via Amazon SES (Simple Email Service) with advanced features including templating, attachments, logging, and rate limiting. This package is designed to simplify email operations while providing robust controls and customization options.
 
 ## Features
 
-- Send emails using Amazon SES
-- Template support (Simple and Advanced)
-- Logging capabilities
-- Rate limiting (In-Memory and Redis options)
-- Easy to use and integrate
+- **Send Emails Using Amazon SES:** Leverage the scalability and reliability of AWS SES to send your emails.
+- **Advanced Templating:** Utilize both Simple and Advanced template engines for dynamic and reusable email content.
+- **Attachments Support:** Easily attach multiple files (PDFs, images, etc.) to your emails.
+- **Logging Capabilities:** Track email operations with integrated logging for monitoring and troubleshooting.
+- **Rate Limiting:** Control email sending frequency with In-Memory and Redis-based rate limiters.
+- **Asynchronous Sending:** Improve application performance by sending emails asynchronously.
+- **Partial Rendering:** Include shared components across multiple templates without compromising security.
+- **Secure Variable Handling:** Avoid security vulnerabilities.
 
-Our features are designed to cater to a wide range of email sending needs, from simple transactional emails to complex, templated marketing campaigns.
+Our features cater to a wide range of email sending needs, from simple transactional emails to complex, templated marketing campaigns with attachments.
 
 ## Installation
 
-You can install the package via composer:
+You can install the package via Composer:
 
 ```bash
 composer require creativecrafts/php-aws-send-email
@@ -36,24 +39,36 @@ The EmailService class is the core of this package, providing a simple interface
 use Aws\Ses\SesClient;
 use CreativeCrafts\EmailService\Services\EmailService;
 
+// Initialize the SES client
 $sesClient = new SesClient([
     'version' => 'latest',
     'region'  => 'us-west-2',
-    /*'credentials' => [
+    // Uncomment and fill in your AWS credentials if not using environment variables or IAM roles (Not Recommended)
+    /*
+    'credentials' => [
         'key'    => 'YOUR_AWS_ACCESS_KEY_ID',
         'secret' => 'YOUR_AWS_SECRET_ACCESS_KEY',
-    ],*// Remove the 'credentials' array if you're using environment variables or IAM roles (Recommended)
+    ],
+    */
 ]);
 
+// Initialize the EmailService without optional features
 $emailService = new EmailService($sesClient);
 
-$emailService->setSenderEmail('sender@example.com')
-    ->setRecipientEmail('recipient@example.com')
-    ->setSubject('Test Email')
-    ->setBodyText('This is a test email.')
-    ->sendEmail();
+// Send a simple email
+try {
+    $emailService->setSenderEmail('sender@example.com')
+        ->setRecipientEmail('recipient@example.com')
+        ->setSubject('Test Email')
+        ->setBodyText('This is a test email.')
+        ->sendEmail();
+
+    echo "Email sent successfully!";
+} catch (Exception $e) {
+    echo "Error sending email: " . $e->getMessage();
+}
 ```
-Consider using this for sending transactional emails, notifications, or any automated email communication. 
+Use this for sending transactional emails, notifications, or any automated email communication. 
 Remember to handle exceptions that might occur during the sending process.
 
 ### Using Optional Features
@@ -67,20 +82,41 @@ use Psr\Log\LoggerInterface;
 use CreativeCrafts\EmailService\Interfaces\RateLimiterInterface;
 use CreativeCrafts\EmailService\Interfaces\TemplateEngineInterface;
 
-$sesClient = new SesClient([/* configuration */]);
+// Initialize the SES client
+$sesClient = new SesClient([
+    'version' => 'latest',
+    'region'  => 'us-west-2',
+    // Uncomment and fill in your AWS credentials if not using environment variables or IAM roles (Not Recommended)
+    /*
+    'credentials' => [
+        'key'    => 'YOUR_AWS_ACCESS_KEY_ID',
+        'secret' => 'YOUR_AWS_SECRET_ACCESS_KEY',
+    ],
+    */
+]);
+
+// Initialize Logger, RateLimiter, and TemplateEngine (implement these interfaces as needed)
 $logger = new YourLoggerImplementation();
 $rateLimiter = new YourRateLimiterImplementation();
 $templateEngine = new YourTemplateEngineImplementation();
 
+// Create the EmailService with optional features
 $emailService = new EmailService($sesClient, $logger, $rateLimiter, $templateEngine);
 
-$emailService->setSenderEmail('sender@example.com')
-    ->setRecipientEmail('recipient@example.com')
-    ->setSubject('Test Email')
-    ->setEmailTemplate('welcome', ['name' => 'John'])
-    ->sendEmail();
-```
+// Send a templated email
+try {
+    $emailService->setSenderEmail('sender@example.com')
+        ->setRecipientEmail('recipient@example.com')
+        ->setSenderName('Sender Name')
+        ->setSubject('Welcome to Our Service')
+        ->setEmailTemplate('welcome', ['name' => 'John Doe'])
+        ->sendEmail();
 
+    echo "Templated email sent successfully!";
+} catch (Exception $e) {
+    echo "Error sending templated email: " . $e->getMessage();
+}
+```
 By incorporating these optional features, you can log email activities, control sending rates, and use templates for consistent and dynamic email content. 
 This approach is particularly useful for applications that send a high volume of emails or require detailed tracking and control over the email sending process.
 
@@ -88,14 +124,85 @@ This approach is particularly useful for applications that send a high volume of
 
 The EmailService class provides advanced features to handle more complex email sending scenarios. Here are some examples of how you can leverage these capabilities:
 
-#### Adding Attachments
+#### Sending Emails with Attachments
 
 You can easily add file attachments to your emails using the `addAttachment method`. This is useful for sending documents, images, or any other files along with your email content.
+To send emails with multiple attachments seamlessly, follow these steps:
+1. Initialize the EmailService with Optional Features:
 
 ```php
-$emailService->addAttachment('/path/to/file.pdf');
-```
+use Aws\Ses\SesClient;
+use CreativeCrafts\EmailService\Services\EmailService;
+use CreativeCrafts\EmailService\Services\Templates\Engines\AdvancedTemplateEngine;
+use CreativeCrafts\EmailService\Services\Logger\Logger;
 
+// Initialize the SES client
+$sesClient = new SesClient([
+    'version' => 'latest',
+    'region'  => 'us-west-2',
+]);
+
+// Initialize the Logger
+$logger = new Logger('/path/to/your/email.log');
+
+// Initialize the AdvancedTemplateEngine with global variables
+$templateEngine = new AdvancedTemplateEngine(
+    '/path/to/templates',
+    '/path/to/partials',
+    'phtml',
+    [
+        'baseLight' => '#ed8b00',
+        'baseMid'   => '#ed8b00',
+        'baseDark'  => '#ed8b00',
+        'greyLight' => '#dedede',
+        'greyMid'   => '#bcbcbc',
+        'greyDark'  => '#555555',
+        'white'     => '#ffffff',
+    ]
+);
+
+// Create the EmailService with the Logger and TemplateEngine
+$emailService = new EmailService($sesClient, $logger, null, $templateEngine);
+```
+2. Prepare the Email Data and Add Attachments:
+    
+```php 
+// Prepare email data with variables for the template
+$emailData = [
+    'etemplateheader' => 'Hej Jane Doe,', // Example header
+    'etemplate' => "Enligt överenskommelse översänder jag länk till JobMatch. Information och instruktioner finns på webbsidan du kommer till.\n\nHar du frågor är du välkommen att kontakta mig. Observera att det inte går att svara direkt på det här e-postmeddelandet.\n\nMed vänliga hälsningar,\nYour Name\nYour Company",
+    'companydata' => [
+        'name' => 'Your Company',
+        'address' => '1234 Street Name',
+        'areacode' => '12345',
+        'city' => 'CityName',
+        'country' => 'CountryName',
+    ],
+    'testid' => '136277',
+];
+
+// Add attachments
+$emailService->addAttachment('/path/to/invoice.pdf')
+    ->addAttachment('/path/to/image.jpg');
+```
+3. Send the Email:
+
+```php
+<?php
+
+try {
+    $emailService->setSenderEmail('sender@yourdomain.com')
+        ->setRecipientEmail('jane.doe@example.com')
+        ->setSenderName('Your Company')
+        ->setSubject('Welcome to JobMatch')
+        ->setEmailTemplate('send-test', $emailData)
+        ->sendEmail();
+
+    echo "Email with attachments sent successfully!";
+} catch (Exception $e) {
+    echo "Error sending email with attachments: " . $e->getMessage();
+}
+```
 This feature is particularly helpful when you need to send invoices, reports, or supplementary materials along with your emails. 
 You can add multiple attachments by calling this method multiple times.
 
@@ -104,7 +211,11 @@ You can add multiple attachments by calling this method multiple times.
 For applications that need to handle high volumes of emails without blocking the main execution thread, the sendEmailAsync method provides an asynchronous approach to email sending.
 
 ```php
+<?php
+
+// Send the email asynchronously
 $promise = $emailService->sendEmailAsync();
+
 $promise->then(
     function ($result) {
         echo "Email sent! Message ID: " . $result['MessageId'];
@@ -113,27 +224,80 @@ $promise->then(
         echo "An error occurred: " . $error->getMessage();
     }
 );
-```
 
+// Continue with other tasks while the email is being sent
+echo "Email is being sent asynchronously.";
+```
 Asynchronous sending is beneficial in scenarios where you're sending multiple emails simultaneously or when you want to improve the performance of your application by not waiting for the email to be sent before continuing execution. 
 This method returns a promise, allowing you to handle the success or failure of the email sending operation in a non-blocking manner.
 
-## Using Templates
+### Using Templates with Attachments
+Combine templating and attachments to send personalized emails with supplementary files.
 
+```php
+// Prepare email data with variables for the template
+$emailData = [
+    'etemplateheader' => 'Hej Jane Doe,', // Example header
+    'etemplate' => "Enligt överenskommelse översänder jag länk till JobMatch. Information och instruktioner finns på webbsidan du kommer till.\n\nHar du frågor är du välkommen att kontakta mig. Observera att det inte går att svara direkt på det här e-postmeddelandet.\n\nMed vänliga hälsningar,\nYour Name\nYour Company",
+    'companydata' => [
+        'name' => 'Your Company',
+        'address' => '1234 Street Name',
+        'areacode' => '12345',
+        'city' => 'CityName',
+        'country' => 'CountryName',
+    ],
+    'testid' => '136277',
+];
+
+// Add attachments
+$emailService->addAttachment('/path/to/invoice.pdf')
+    ->addAttachment('/path/to/image.jpg');
+
+// Send the templated email with attachments
+try {
+    $emailService->setSenderEmail('sender@yourdomain.com')
+        ->setRecipientEmail('jane.doe@example.com')
+        ->setSenderName('Your Company')
+        ->setSubject('Welcome to JobMatch')
+        ->setEmailTemplate('send-test', $emailData)
+        ->sendEmail();
+
+    echo "Email with attachments sent successfully!";
+} catch (Exception $e) {
+    echo "Error sending email with attachments: " . $e->getMessage();
+}
+```
+
+## Using Templates
 Templates allow you to create reusable email content, making it easier to maintain consistent messaging across your application. 
-This package supports two types of templates: Simple and Advanced.
+This package supports two types of templates: ***Simple*** and ***Advanced***.
 
 ### Simple Templates
 
 Simple templates are best for straightforward, text-based emails with basic variable substitution.
 
 ```php
-use CreativeCrafts\EmailService\Services\Templates\SimpleTemplate;
+use CreativeCrafts\EmailService\Services\Templates\Engines\SimpleTemplateEngine;
 
-$template = new SimpleTemplate('Hello, {name}!');
-$renderedContent = $template->render(['name' => 'John']);
+// Initialize the SimpleTemplateEngine
+$templateEngine = new SimpleTemplateEngine('/path/to/templates');
+
+// Load a simple template
+$template = $templateEngine->load('welcome');
+
+// Render the template with variables
+$renderedContent = $template->render(['name' => 'John Doe']);
 ```
+### Example Simple Template (welcome.phtml):
 
+```php
+Hello {name},
+
+Welcome to our service! We're glad to have you on board.
+
+Best regards,
+Your Company Name
+```
 Use simple templates for welcome emails, password reset notifications, or any email where the content structure remains largely the same with only a few changing variables.
 
 ### Advanced Template
@@ -141,12 +305,113 @@ Use simple templates for welcome emails, password reset notifications, or any em
 Advanced templates offer more flexibility, allowing you to use PHP in your templates for complex logic and data manipulation.
 
 ```php
-use CreativeCrafts\EmailService\Services\Templates\AdvancedTemplate;
+<?php
 
-$template = new AdvancedTemplate('/path/to/template.php');
-$renderedContent = $template->render(['name' => 'John', 'age' => 30]);
+use CreativeCrafts\EmailService\Services\Templates\Engines\AdvancedTemplateEngine;
+
+// Initialize the AdvancedTemplateEngine with global variables
+$templateEngine = new AdvancedTemplateEngine(
+    '/path/to/templates',
+    '/path/to/partials',
+    'phtml',
+    [
+        'baseLight' => '#ed8b00',
+        'baseMid'   => '#ed8b00',
+        'baseDark'  => '#ed8b00',
+        'greyLight' => '#dedede',
+        'greyMid'   => '#bcbcbc',
+        'greyDark'  => '#555555',
+        'white'     => '#ffffff',
+    ]
+);
+
+// Load an advanced template
+$template = $templateEngine->load('order_confirmation');
+
+// Render the template with variables
+$renderedContent = $template->render([
+    'user' => [
+        'name' => 'John Doe',
+        'email' => 'john.doe@example.com',
+    ],
+    'order' => [
+        'id' => '12345',
+        'items' => [
+            ['name' => 'Product A', 'price' => 19.99],
+            ['name' => 'Product B', 'price' => 29.99],
+        ],
+        'total' => 49.98,
+    ],
+]);
 ```
+### Example Advanced Template (order_confirmation.phtml):
 
+```php
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Order Confirmation</title>
+    <style>
+        table, h1, h2, p { font-family: Helvetica, Arial, Sans-Serif; }
+        p { margin-top: 3px; margin-bottom: 6px; }
+        a:link { color: <?= $this->baseLight; ?>; }
+        a:visited { color: <?= $this->baseDark; ?>; }
+        a:hover { color: <?= $this->baseMid; ?>; }
+    </style>
+</head>
+<body>
+    <table width="599" cellpadding="10" cellspacing="0" style="margin:0 auto;">
+        <tr>
+            <td colspan="3" style="background-color: <?= $this->white; ?>; padding-left: 20px;">
+                <h1 style="padding:0; margin:0; color: <?= $this->baseLight; ?>; font-size:24px;">Jobmatch.</h1>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="3" style="padding:10px; border:none;">
+                <div style="background-color: <?= $this->white; ?>; border:none; padding:20px; font-size:14px; line-height:1.5em; color: <?= $this->greyDark; ?>;">
+                    Hello <?= htmlspecialchars($this->user['name']); ?>,
+
+                    <p>Thank you for your order (ID: <?= htmlspecialchars($this->order['id']); ?>)!</p>
+
+                    <h2>Order Details:</h2>
+                    <table>
+                        <tr>
+                            <th>Product</th>
+                            <th>Price</th>
+                        </tr>
+                        <?php foreach ($this->order['items'] as $item): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($item['name']); ?></td>
+                            <td>$<?= number_format($item['price'], 2); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+
+                    <p><strong>Total: $<?= number_format($this->order['total'], 2); ?></strong></p>
+
+                    <?php if ($this->order['total'] > 100): ?>
+                        <p>As a valued customer spending over $100, you've earned free shipping on this order!</p>
+                    <?php endif; ?>
+
+                    <p>If you have any questions about your order, please don't hesitate to contact us.</p>
+
+                    <p>Best regards,<br>Your Company Name</p>
+                </div>
+            </td>
+        </tr>
+        <tr>
+            <td valign="top" align="left" colspan="3" style="background-color: <?= $this->white; ?>; font-size:11px; border:none;">
+                <p><b><?= htmlspecialchars($this->company['name']); ?></b><br /></p>
+                <p><?= htmlspecialchars($this->company['address']); ?><br />
+                <?= htmlspecialchars($this->company['areacode']); ?> <?= htmlspecialchars($this->company['city']); ?><br />
+                <?= htmlspecialchars($this->company['country']); ?><br /></p>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+```
 Advanced templates are ideal for emails that require conditional content, loops, or complex data presentation. 
 They're great for personalized newsletters, detailed reports, or any email where the content structure might vary significantly based on the data.
 
@@ -154,6 +419,84 @@ They're great for personalized newsletters, detailed reports, or any email where
 
 Template engines provide a way to manage and render multiple templates efficiently. 
 This package includes two template engines: SimpleTemplateEngine and AdvancedTemplateEngine.
+
+### Advanced Template Engine
+
+The `AdvancedTemplateEngine` allows you to:
+
+- Use PHP code directly in your templates for dynamic content.
+- Include partial templates for shared components.
+- Access variables using object-like syntax ($this->variableName).
+- Implement complex logic within your templates safely without using extract().
+
+### Using Partial Rendering and Shared Variables
+Shared variables (like color codes) are defined once and made available across all templates and partials. This ensures consistency and reduces redundancy.
+
+***Shared Variables*** (`snipplet-email-variables.php`):
+
+```php
+return [
+    'baseLight' => '#ed8b00',
+    'baseMid'   => '#ed8b00',
+    'baseDark'  => '#ed8b00',
+    'greyLight' => '#dedede',
+    'greyMid'   => '#bcbcbc',
+    'greyDark'  => '#555555',
+    'white'     => '#ffffff',
+];
+```
+### Including Partial Templates:
+```php
+<?php
+// send-test.phtml
+
+<?= $this->partial('snipplet-email-header'); ?>
+
+<div style="background-color:#ffffff; border:none; padding:20px; margin-top:10px; font-size:14px; line-height:1.5em; color:#555555;">
+    <?= nl2br($this->emailTemplateHeader); ?>
+</div>
+
+<div style="background-color:#ffffff; border:none; padding:20px; margin-top:10px; font-size:14px; line-height:1.5em; color:#555555;">
+    <?= nl2br($this->emailTemplate); ?>
+</div>
+
+<?= $this->partial('snipplet-email-footer', ['company' => $this->companyInfo]); ?>
+
+<p><small style="color: #fff; display: none;">u=<?= htmlspecialchars($this->name); ?></small></p>
+```
+### Partial Template (snipplet-email-header.phtml):
+
+```php
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Email Header</title>
+    <style>
+        table, h1, h2, p { font-family: Helvetica, Arial, Sans-Serif; }
+        p { margin-top: 3px; margin-bottom: 6px; }
+        a:link { color: <?= $this->baseLight; ?>; }
+        a:visited { color: <?= $this->baseDark; ?>; }
+        a:hover { color: <?= $this->baseMid; ?>; }
+    </style>
+</head>
+<body>
+    <table width="599" cellpadding="10" cellspacing="0" style="margin:0 auto;">
+        <tr>
+            <td style="padding:0;" width="275"></td>
+            <td style="padding:0;" width="50"></td>
+            <td style="padding:0;" width="275"></td>
+        </tr>
+        <tr>
+            <td colspan="3" style="background-color: <?= $this->white; ?>; padding-left: 20px;">
+                <h1 style="padding:0; margin:0; color: <?= $this->baseLight; ?>; font-size:24px;">CreativeCrafts Solution</h1>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="3" style="padding:10px; border:none;">
+                <div style="background-color: <?= $this->white; ?>; border:none; padding:20px; font-size:14px; line-height:1.5em; color: <?= $this->greyDark; ?>;">
+```
+This setup ensures that all templates and partials have access to the shared color variables without the need for including external files, enhancing security and maintainability.
 
 ### Simple Template Engine
 
@@ -260,212 +603,93 @@ Best regards,
 Your Company Name
 ```
 The SimpleTemplateEngine will replace the placeholders in curly braces with the corresponding values from the $emailData array. 
-However, for more complex parts like the item list and conditional messages, you need to prepare these in the PHP code before passing them to the template. 
-This approach keeps the template simple and focused on the email content structure, while the PHP code handles the data preparation and logic.
-
-### Advanced Template Engine
-
-### Advanced Template Engine
-
-The Advanced Template Engine allows you to work with more complex, PHP-based templates.
-
-```php
-use CreativeCrafts\EmailService\Services\Templates\Engines\AdvancedTemplateEngine;
-
-// Initialize the AdvancedTemplateEngine with template and partial directories
-$templateDir = '/path/to/templates';
-$partialDir = '/path/to/partials';
-$templateExtension = '.phtml'; // Optional, default is '.html'
-
-$engine = new AdvancedTemplateEngine($templateDir, $partialDir, $templateExtension);
-$template = $engine->load('user_profile');
-$renderedContent = $template->render(['user' => $userObject]);
-```
-This is ideal when you need to generate complex, data-driven emails. It's particularly useful for applications that send highly personalized or dynamic content, such as user reports or customized newsletters.
-
-The AdvancedTemplateEngine allows you to:
-    - Use PHP code directly in your templates
-    - Include partial templates
-    - Access variables using object-like syntax
-    - Implement complex logic within your templates
-
-```html
-<!-- user_profile.phtml -->
-<h1>Welcome, <?= $this->user->name ?>!</h1>
-
-<p>Your account details:</p>
-<ul>
-    <li>Email: <?= $this->user->email ?></li>
-    <li>Joined: <?= $this->user->joinDate->format('F j, Y') ?></li>
-</ul>
-
-<?php if ($this->user->isPremium): ?>
-    <?= $this->partial('premium_features', ['user' => $this->user]) ?>
-<?php endif; ?>
-```
-In this example, the template uses PHP to display user information, format dates, and conditionally include a partial template for premium users.
-
-### Usage with EmailService
-
-```php
-use Aws\Ses\SesClient;
-use CreativeCrafts\EmailService\Services\EmailService;
-use CreativeCrafts\EmailService\Services\Templates\Engines\AdvancedTemplateEngine;
-
-// Set up the SES client
-$sesClient = new SesClient([
-    'version' => 'latest',
-    'region'  => 'us-west-2',
-    // Uncomment and fill in your AWS credentials if not using environment variables or IAM roles
-    /* 'credentials' => [
-        'key'    => 'YOUR_AWS_ACCESS_KEY_ID',
-        'secret' => 'YOUR_AWS_SECRET_ACCESS_KEY',
-    ],*/
-]);
-
-// Set up the AdvancedTemplateEngine
-$templateEngine = new AdvancedTemplateEngine('/path/to/your/templates');
-
-// Create the EmailService with the AdvancedTemplateEngine
-$emailService = new EmailService($sesClient, null, null, $templateEngine);
-
-// Prepare the email data
-$emailData = [
-    'user' => [
-        'name' => 'John Doe',
-        'email' => 'john.doe@example.com',
-    ],
-    'order' => [
-        'id' => '12345',
-        'items' => [
-            ['name' => 'Product A', 'price' => 19.99],
-            ['name' => 'Product B', 'price' => 29.99],
-        ],
-        'total' => 49.98,
-    ],
-];
-
-// Send the email using a template
-try {
-    $emailService->setSenderEmail('sender@yourdomain.com')
-        ->setRecipientEmail($emailData['user']['email'])
-        ->setSubject('Your Order Confirmation')
-        ->setEmailTemplate('order_confirmation', $emailData)
-        ->sendEmail();
-
-    echo "Email sent successfully!";
-} catch (Exception $e) {
-    echo "Error sending email: " . $e->getMessage();
-}
-```
-Now, let's create an example of an advanced template that this code might use:
-
-```html
-// order_confirmation.html or order_confirmation.php or order_confirmation.phtml
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Order Confirmation</title>
-</head>
-<body>
-    <h1>Thank you for your order, <?php echo htmlspecialchars($user['name']); ?>!</h1>
-    
-    <p>Your order (ID: <?php echo htmlspecialchars($order['id']); ?>) has been confirmed.</p>
-    
-    <h2>Order Details:</h2>
-    <table>
-        <tr>
-            <th>Product</th>
-            <th>Price</th>
-        </tr>
-        <?php foreach ($order['items'] as $item): ?>
-        <tr>
-            <td><?php echo htmlspecialchars($item['name']); ?></td>
-            <td>$<?php echo number_format($item['price'], 2); ?></td>
-        </tr>
-        <?php endforeach; ?>
-    </table>
-    
-    <p><strong>Total: $<?php echo number_format($order['total'], 2); ?></strong></p>
-    
-    <?php if ($order['total'] > 100): ?>
-    <p>As a valued customer spending over $100, you've earned free shipping on this order!</p>
-    <?php endif; ?>
-    
-    <p>If you have any questions about your order, please don't hesitate to contact us.</p>
-    
-    <p>Best regards,<br>Your Company Name</p>
-</body>
-</html>
-```
 
 ## Logging
 
 Logging is crucial for tracking email operations, troubleshooting, and maintaining an audit trail.
 
-```php
-use CreativeCrafts\EmailService\Services\Logger\Logger;
+### Example Logger Implementation:
 
-$logger = new Logger('/path/to/email.log');
-$logger->info('Email sent successfully', ['to' => 'recipient@example.com']);
+```php
+namespace CreativeCrafts\EmailService\Services\Logger;
+
+use Psr\Log\AbstractLogger;
+
+class Logger extends AbstractLogger
+{
+    private string $logFile;
+
+    /**
+     * Constructor.
+     *
+     * @param string $logFile The path to the log file.
+     */
+    public function __construct(string $logFile)
+    {
+        $this->logFile = $logFile;
+    }
+
+    /**
+     * Logs with an arbitrary level.
+     *
+     * @param mixed  $level
+     * @param string|\Stringable  $message
+     * @param array $context
+     *
+     * @return void
+     */
+    public function log($level, $message, array $context = []): void
+    {
+        $date = date('Y-m-d H:i:s');
+        $contextString = json_encode($context);
+        $logEntry = "[{$date}] {$level}: {$message} {$contextString}\n";
+        file_put_contents($this->logFile, $logEntry, FILE_APPEND);
+    }
+}
 ```
 
-Use logging to keep track of successful sends, failures, and other important events in your email operations. 
-This can be invaluable for debugging and monitoring your application's email functionality.
-
-### Usage with EmailService
+### Using the Logger with EmailService:
 
 ```php
 use Aws\Ses\SesClient;
 use CreativeCrafts\EmailService\Services\EmailService;
 use CreativeCrafts\EmailService\Services\Logger\Logger;
 
-// Set up the SES client
+// Initialize the SES client
 $sesClient = new SesClient([
     'version' => 'latest',
     'region'  => 'us-west-2',
-    // Uncomment and fill in your AWS credentials if not using environment variables or IAM roles
-    /* 'credentials' => [
-        'key'    => 'YOUR_AWS_ACCESS_KEY_ID',
-        'secret' => 'YOUR_AWS_SECRET_ACCESS_KEY',
-    ],*/
 ]);
 
-// Set up the Logger
+// Initialize the Logger
 $logger = new Logger('/path/to/your/email.log');
 
 // Create the EmailService with the Logger
 $emailService = new EmailService($sesClient, $logger);
 
-// Prepare the email data
-$senderEmail = 'sender@example.com';
-$recipientEmail = 'recipient@example.com';
-$subject = 'Test Email with Logging';
-$bodyText = 'This is a test email sent with logging enabled.';
-
-// Send the email
+// Prepare and send the email
 try {
-    $result = $emailService->setSenderEmail($senderEmail)
-        ->setRecipientEmail($recipientEmail)
-        ->setSubject($subject)
-        ->setBodyText($bodyText)
+    $emailService->setSenderEmail('sender@yourdomain.com')
+        ->setRecipientEmail('recipient@example.com')
+        ->setSenderName('Your Company')
+        ->setSubject('Test Email with Logging')
+        ->setBodyText('This is a test email sent with logging enabled.')
         ->sendEmail();
 
-    // Log the successful email send
+    // Log additional activities if needed
     $logger->info('Email sent successfully', [
-        'messageId' => $result['MessageId'],
-        'to' => $recipientEmail,
-        'subject' => $subject
+        'messageId' => '1234567890',
+        'to' => 'recipient@example.com',
+        'subject' => 'Test Email with Logging'
     ]);
 
-    echo "Email sent successfully! Message ID: " . $result['MessageId'];
+    echo "Email sent successfully!";
 } catch (Exception $e) {
     // Log the error
     $logger->error('Failed to send email', [
         'error' => $e->getMessage(),
-        'to' => $recipientEmail,
-        'subject' => $subject
+        'to' => 'recipient@example.com',
+        'subject' => 'Test Email with Logging'
     ]);
 
     echo "Error sending email: " . $e->getMessage();
@@ -476,6 +700,8 @@ $logger->info('Email queue processed', ['queueSize' => 10, 'processTime' => '2.5
 $logger->warning('Rate limit approaching', ['currentRate' => 95, 'limit' => 100]);
 $logger->error('Failed to connect to email server', ['server' => 'smtp.example.com']);
 ```
+Use logging to keep track of successful sends, failures, and other important events in your email operations. 
+This can be invaluable for debugging and monitoring your application's email functionality.
 
 ## Rate Limiting
 
@@ -490,51 +716,31 @@ use Aws\Ses\SesClient;
 use CreativeCrafts\EmailService\Services\EmailService;
 use CreativeCrafts\EmailService\Services\RateLimiter\InMemoryRateLimiter;
 
-// Set up the SES client
+// Initialize the SES client
 $sesClient = new SesClient([
     'version' => 'latest',
     'region'  => 'us-west-2',
-    // Uncomment and fill in your AWS credentials if not using environment variables or IAM roles
-    /* 'credentials' => [
-        'key'    => 'YOUR_AWS_ACCESS_KEY_ID',
-        'secret' => 'YOUR_AWS_SECRET_ACCESS_KEY',
-    ],*/
 ]);
 
-// Set up the InMemoryRateLimiter
+// Initialize the InMemoryRateLimiter
 // This example sets a limit of 100 emails per hour
 $rateLimiter = new InMemoryRateLimiter(100, 3600);
 
 // Create the EmailService with the InMemoryRateLimiter
 $emailService = new EmailService($sesClient, null, $rateLimiter);
 
-// Prepare the email data
-$senderEmail = 'sender@example.com';
-$recipientEmail = 'recipient@example.com';
-$subject = 'Test Email with Rate Limiting';
-$bodyText = 'This is a test email sent with rate limiting enabled.';
+// Prepare and send the email
+try {
+    $emailService->setSenderEmail('sender@example.com')
+        ->setRecipientEmail('recipient@example.com')
+        ->setSenderName('Sender Name')
+        ->setSubject('Test Email with Rate Limiting')
+        ->setBodyText('This is a test email sent with rate limiting enabled.')
+        ->sendEmail();
 
-// Function to send an email
-function sendEmail($emailService, $senderEmail, $recipientEmail, $subject, $bodyText) {
-    try {
-        $result = $emailService->setSenderEmail($senderEmail)
-            ->setRecipientEmail($recipientEmail)
-            ->setSubject($subject)
-            ->setBodyText($bodyText)
-            ->sendEmail();
-
-        echo "Email sent successfully! Message ID: " . $result['MessageId'] . "\n";
-    } catch (Exception $e) {
-        echo "Error sending email: " . $e->getMessage() . "\n";
-    }
-}
-
-// Simulate sending multiple emails
-for ($i = 0; $i < 120; $i++) {
-    sendEmail($emailService, $senderEmail, $recipientEmail, $subject, $bodyText);
-    
-    // Sleep for a short time to simulate time passing between email sends
-    usleep(100000); // 0.1 seconds
+    echo "Email sent successfully!";
+} catch (Exception $e) {
+    echo "Error sending email: " . $e->getMessage();
 }
 ```
 Use this for smaller applications or when you don't need to share rate limit data across multiple servers. Be aware that the limits reset if your application restarts.
@@ -544,60 +750,42 @@ Use this for smaller applications or when you don't need to share rate limit dat
 Ideal for distributed systems or high-volume applications that require persistent and shared rate limiting.
 
 ```php
+<?php
+
 use Aws\Ses\SesClient;
 use CreativeCrafts\EmailService\Services\EmailService;
 use CreativeCrafts\EmailService\Services\RateLimiter\RedisRateLimiter;
 use Redis;
 
-// Set up the SES client
+// Initialize the SES client
 $sesClient = new SesClient([
     'version' => 'latest',
     'region'  => 'us-west-2',
-    // Uncomment and fill in your AWS credentials if not using environment variables or IAM roles
-    /* 'credentials' => [
-        'key'    => 'YOUR_AWS_ACCESS_KEY_ID',
-        'secret' => 'YOUR_AWS_SECRET_ACCESS_KEY',
-    ],*/
 ]);
 
-// Set up Redis connection
+// Initialize Redis connection
 $redis = new Redis();
 $redis->connect('127.0.0.1', 6379);
 
-// Set up the RedisRateLimiter
+// Initialize the RedisRateLimiter
 // This example sets a limit of 100 emails per hour
 $rateLimiter = new RedisRateLimiter($redis, 'email_rate_limit', 100, 3600);
 
 // Create the EmailService with the RedisRateLimiter
 $emailService = new EmailService($sesClient, null, $rateLimiter);
 
-// Prepare the email data
-$senderEmail = 'sender@example.com';
-$recipientEmail = 'recipient@example.com';
-$subject = 'Test Email with Redis Rate Limiting';
-$bodyText = 'This is a test email sent with Redis rate limiting enabled.';
+// Prepare and send the email
+try {
+    $emailService->setSenderEmail('sender@example.com')
+        ->setRecipientEmail('recipient@example.com')
+        ->setSenderName('Sender Name')
+        ->setSubject('Test Email with Redis Rate Limiting')
+        ->setBodyText('This is a test email sent with Redis rate limiting enabled.')
+        ->sendEmail();
 
-// Function to send an email
-function sendEmail($emailService, $senderEmail, $recipientEmail, $subject, $bodyText) {
-    try {
-        $result = $emailService->setSenderEmail($senderEmail)
-            ->setRecipientEmail($recipientEmail)
-            ->setSubject($subject)
-            ->setBodyText($bodyText)
-            ->sendEmail();
-
-        echo "Email sent successfully! Message ID: " . $result['MessageId'] . "\n";
-    } catch (Exception $e) {
-        echo "Error sending email: " . $e->getMessage() . "\n";
-    }
-}
-
-// Simulate sending multiple emails
-for ($i = 0; $i < 120; $i++) {
-    sendEmail($emailService, $senderEmail, $recipientEmail, $subject, $bodyText);
-    
-    // Sleep for a short time to simulate time passing between email sends
-    usleep(100000); // 0.1 seconds
+    echo "Email sent successfully!";
+} catch (Exception $e) {
+    echo "Error sending email: " . $e->getMessage();
 }
 ```
 The RedisRateLimiter offers several advantages over the InMemoryRateLimiter:
@@ -617,12 +805,23 @@ This setup allows you to maintain consistent rate limiting across multiple appli
 ## Configuration
 Proper configuration is key to getting the most out of this package. Here's what to consider for each component:
 
-    - EmailService: Ensure your SES client is properly configured with your AWS credentials. Choose appropriate logger and rate limiter implementations based on your needs.
-    - Logger: Choose a log file path that's writable by your application and easily accessible for monitoring.
-    - InMemoryRateLimiter: Set limits that align with your SES account limits and expected email volumes.
-    - RedisRateLimiter: Ensure your Redis connection is stable and consider using a dedicated Redis instance for rate limiting in high-volume scenarios.
-    - SimpleTemplateEngine and AdvancedTemplateEngine: Organize your templates in a logical directory structure for easy management.
+- EmailService:
+  - SES Client: Ensure your SES client is properly configured with your AWS credentials and region.
+  - Logger: Choose a log file path that's writable by your application and easily accessible for monitoring.
+  - Rate Limiter: Select either InMemoryRateLimiter or RedisRateLimiter based on your application's needs and infrastructure.
+  - Template Engine: Organize your templates in a logical directory structure and pass shared variables appropriately.
+  
+- Logger:
+  - Ensure the log file path is secure and not publicly accessible.
+  - Use appropriate log levels (info, warning, error) to categorize log messages effectively.
+  
+- Rate Limiter:
+  - InMemoryRateLimiter: Set limits that align with your SES account limits and expected email volumes.
+  - RedisRateLimiter: Ensure your Redis connection is stable and consider using a dedicated Redis instance for rate limiting in high-volume scenarios.
 
+- Template Engines:
+  - SimpleTemplateEngine: Organize your simple templates in a dedicated directory for easy management.
+  - AdvancedTemplateEngine: Utilize partials and shared variables to maintain consistency across complex templates.
 
 ## Testing
 

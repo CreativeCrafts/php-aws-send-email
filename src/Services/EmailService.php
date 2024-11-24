@@ -83,35 +83,11 @@ class EmailService implements EmailServiceInterface
      */
     public function setReturnPath(string $returnPath): self
     {
-        if (!$this->validateEmail($returnPath)) {
+        if (! $this->validateEmail($returnPath)) {
             throw new InvalidArgumentException('Invalid email address');
         }
         $this->returnPath = $returnPath;
         return $this;
-    }
-
-    /**
-     * Validates an email address.
-     * This method checks if the given email address is valid by using PHP's built-in
-     * filter_var function and verifying the existence of an MX record for the domain.
-     *
-     * @param string $email The email address to validate.
-     * @return bool Returns true if the email is valid and has a valid MX record,
-     *              false otherwise.
-     */
-    protected function validateEmail(string $email): bool
-    {
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return false;
-        }
-
-        $domain = strrchr($email, "@");
-        if ($domain === false) {
-            return false;
-        }
-
-        $domain = substr($domain, 1);
-        return checkdnsrr($domain, "MX");
     }
 
     /**
@@ -125,7 +101,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setSenderEmail(string $email): self
     {
-        if (!$this->validateEmail($email)) {
+        if (! $this->validateEmail($email)) {
             throw new InvalidArgumentException('Invalid sender email');
         }
         $this->senderEmail = $email;
@@ -157,7 +133,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setRecipientEmail(string $email): self
     {
-        if (!$this->validateEmail($email)) {
+        if (! $this->validateEmail($email)) {
             throw new InvalidArgumentException('Invalid recipient email');
         }
         $this->recipientEmail = $email;
@@ -195,26 +171,6 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Validates an attachment file for email sending.
-     */
-    private function validateAttachment(string $filePath): void
-    {
-        if (!file_exists($filePath)) {
-            throw new InvalidArgumentException('Attachment file does not exist: ' . $filePath);
-        }
-
-        $fileSize = filesize($filePath);
-        if ($fileSize > self::MAX_ATTACHMENT_SIZE) {
-            throw new InvalidArgumentException('Attachment file size exceeds the maximum allowed size');
-        }
-
-        $mimeType = mime_content_type($filePath);
-        if (!in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
-            throw new InvalidArgumentException('Attachment file type is not allowed: ' . $mimeType);
-        }
-    }
-
-    /**
      * Sets the email template and renders it with the provided variables.
      * This method loads a template, renders it with the given variables,
      * sets the rendered content as the HTML body of the email, and
@@ -227,7 +183,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setEmailTemplate(string $templateName, array $variables): self
     {
-        if (!$this->templateEngine instanceof TemplateEngineInterface) {
+        if (! $this->templateEngine instanceof TemplateEngineInterface) {
             throw new RuntimeException('Template engine is not set');
         }
         try {
@@ -272,33 +228,14 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Converts HTML content to plain text.
-     * This function removes HTML tags, decodes HTML entities, and normalizes whitespace
-     * to create a plain text version of the given HTML content.
-     *
-     * @param string $html The HTML content to be converted to plain text.
-     * @return string The resulting plain text version of the input HTML.
-     */
-    private function htmlToText(string $html): string
-    {
-        /** @var string $html */
-        $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
-        /** @var string $html */
-        $html = preg_replace('/<\/p>/i', "\n\n", $html);
-        $text = strip_tags($html);
-        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        return trim($text);
-    }
-
-    /**
      * Sends an email using Amazon SES.
      */
     public function sendEmail(): Result
     {
-        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
-                'send_email',
-                $this->senderEmail
-            )) {
+        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
+            'send_email',
+            $this->senderEmail
+        )) {
             throw new RuntimeException('Email sending rate limit exceeded');
         }
 
@@ -329,6 +266,72 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
+     * Sends an email asynchronously using Amazon SES.
+     *
+     * @throws RandomException
+     */
+    public function sendEmailAsync(): PromiseInterface
+    {
+        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
+            'send_email',
+            $this->senderEmail
+        )) {
+            throw new RuntimeException('Email sending rate limit exceeded');
+        }
+
+        $this->fullEmailDataValidation();
+        $this->setEmailHeaders();
+        $this->constructMessageBody();
+
+        $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
+
+        return $this->sesClient->sendRawEmailAsync([
+            'RawMessage' => [
+                'Data' => $rawMessage,
+            ],
+            'Source' => $this->source(),
+            'ReturnPath' => $this->returnPath,
+        ])->then(
+            function ($result) {
+                $this->logger->info('Email sent successfully', [
+                    'messageId' => $result['MessageId'],
+                ]);
+                return $result;
+            },
+            function ($exception): void {
+                $this->logger->error('Error sending email', [
+                    'error' => $exception->getMessage(),
+                ]);
+                throw $exception;
+            }
+        );
+    }
+
+    /**
+     * Validates an email address.
+     * This method checks if the given email address is valid by using PHP's built-in
+     * filter_var function and verifying the existence of an MX record for the domain.
+     *
+     * @param string $email The email address to validate.
+     * @return bool Returns true if the email is valid and has a valid MX record,
+     *              false otherwise.
+     */
+    protected function validateEmail(string $email): bool
+    {
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+
+        $domain = strrchr($email, "@");
+        if ($domain === false) {
+            return false;
+        }
+
+        $domain = substr($domain, 1);
+        return checkdnsrr($domain, "MX");
+    }
+
+    /**
      * Performs full validation of email data before sending.
      * This method checks the validity of the sender and recipient email addresses,
      * ensures that a subject is provided, and verifies that either a text or HTML body
@@ -342,10 +345,10 @@ class EmailService implements EmailServiceInterface
      */
     protected function fullEmailDataValidation(): void
     {
-        if (!$this->validateEmail($this->senderEmail)) {
+        if (! $this->validateEmail($this->senderEmail)) {
             throw new InvalidArgumentException('A valid sender email is required');
         }
-        if (!$this->validateEmail($this->recipientEmail)) {
+        if (! $this->validateEmail($this->recipientEmail)) {
             throw new InvalidArgumentException('A valid recipient email is required');
         }
         if ($this->subject === '' || $this->subject === '0') {
@@ -390,17 +393,6 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Encodes a header value if necessary.
-     */
-    private function encodeHeader(string $value): string
-    {
-        if (preg_match('/[\x80-\xFF]/', $value)) {
-            return '=?UTF-8?B?' . base64_encode($value) . '?=';
-        }
-        return $value;
-    }
-
-    /**
      * Constructs the message body for the email.
      *
      * @throws RandomException
@@ -437,31 +429,6 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Constructs the alternative part of the message body (text and HTML).
-     */
-    private function constructAlternativePart(): void
-    {
-        // Text part
-        $this->messageBody[] = '--' . $this->boundary;
-        $this->messageBody[] = 'Content-Type: text/plain; charset=UTF-8';
-        $this->messageBody[] = 'Content-Transfer-Encoding: 7bit';
-        $this->messageBody[] = '';
-        $this->messageBody[] = $this->bodyText;
-        $this->messageBody[] = '';
-
-        // HTML part
-        $this->messageBody[] = '--' . $this->boundary;
-        $this->messageBody[] = 'Content-Type: text/html; charset=UTF-8';
-        $this->messageBody[] = 'Content-Transfer-Encoding: 7bit';
-        $this->messageBody[] = '';
-        $this->messageBody[] = $this->bodyHtml;
-        $this->messageBody[] = '';
-
-        // End of alternative part
-        $this->messageBody[] = '--' . $this->boundary . '--';
-    }
-
-    /**
      * Processes email attachments and adds them to the message body.
      */
     protected function processEmailAttachments(string $mixedBoundary): void
@@ -485,44 +452,77 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Sends an email asynchronously using Amazon SES.
-     *
-     * @throws RandomException
+     * Validates an attachment file for email sending.
      */
-    public function sendEmailAsync(): PromiseInterface
+    private function validateAttachment(string $filePath): void
     {
-        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
-                'send_email',
-                $this->senderEmail
-            )) {
-            throw new RuntimeException('Email sending rate limit exceeded');
+        if (! file_exists($filePath)) {
+            throw new InvalidArgumentException('Attachment file does not exist: ' . $filePath);
         }
 
-        $this->fullEmailDataValidation();
-        $this->setEmailHeaders();
-        $this->constructMessageBody();
+        $fileSize = filesize($filePath);
+        if ($fileSize > self::MAX_ATTACHMENT_SIZE) {
+            throw new InvalidArgumentException('Attachment file size exceeds the maximum allowed size');
+        }
 
-        $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
+        $mimeType = mime_content_type($filePath);
+        if (! in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
+            throw new InvalidArgumentException('Attachment file type is not allowed: ' . $mimeType);
+        }
+    }
 
-        return $this->sesClient->sendRawEmailAsync([
-            'RawMessage' => [
-                'Data' => $rawMessage,
-            ],
-            'Source' => $this->source(),
-            'ReturnPath' => $this->returnPath,
-        ])->then(
-            function ($result) {
-                $this->logger->info('Email sent successfully', [
-                    'messageId' => $result['MessageId'],
-                ]);
-                return $result;
-            },
-            function ($exception): void {
-                $this->logger->error('Error sending email', [
-                    'error' => $exception->getMessage(),
-                ]);
-                throw $exception;
-            }
-        );
+    /**
+     * Converts HTML content to plain text.
+     * This function removes HTML tags, decodes HTML entities, and normalizes whitespace
+     * to create a plain text version of the given HTML content.
+     *
+     * @param string $html The HTML content to be converted to plain text.
+     * @return string The resulting plain text version of the input HTML.
+     */
+    private function htmlToText(string $html): string
+    {
+        /** @var string $html */
+        $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
+        /** @var string $html */
+        $html = preg_replace('/<\/p>/i', "\n\n", $html);
+        $text = strip_tags($html);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        return trim($text);
+    }
+
+    /**
+     * Encodes a header value if necessary.
+     */
+    private function encodeHeader(string $value): string
+    {
+        if (preg_match('/[\x80-\xFF]/', $value)) {
+            return '=?UTF-8?B?' . base64_encode($value) . '?=';
+        }
+        return $value;
+    }
+
+    /**
+     * Constructs the alternative part of the message body (text and HTML).
+     */
+    private function constructAlternativePart(): void
+    {
+        // Text part
+        $this->messageBody[] = '--' . $this->boundary;
+        $this->messageBody[] = 'Content-Type: text/plain; charset=UTF-8';
+        $this->messageBody[] = 'Content-Transfer-Encoding: 7bit';
+        $this->messageBody[] = '';
+        $this->messageBody[] = $this->bodyText;
+        $this->messageBody[] = '';
+
+        // HTML part
+        $this->messageBody[] = '--' . $this->boundary;
+        $this->messageBody[] = 'Content-Type: text/html; charset=UTF-8';
+        $this->messageBody[] = 'Content-Transfer-Encoding: 7bit';
+        $this->messageBody[] = '';
+        $this->messageBody[] = $this->bodyHtml;
+        $this->messageBody[] = '';
+
+        // End of alternative part
+        $this->messageBody[] = '--' . $this->boundary . '--';
     }
 }

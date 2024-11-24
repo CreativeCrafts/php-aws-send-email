@@ -43,6 +43,39 @@ class AdvancedTemplate implements TemplateInterface
     }
 
     /**
+     * Magic method to access variables as properties.
+     *
+     * @param string $name The name of the variable to access.
+     * @return mixed The value of the variable or null if it doesn't exist.
+     */
+    public function __get(string $name): mixed
+    {
+        return $this->variables[$name] ?? null;
+    }
+
+    /**
+     * Magic method to set variables as properties.
+     *
+     * @param string $name The name of the variable to set.
+     * @param mixed $value The value to set for the variable.
+     */
+    public function __set(string $name, mixed $value): void
+    {
+        $this->variables[$name] = $value;
+    }
+
+    /**
+     * Magic method to check if a variable is set.
+     *
+     * @param string $name The name of the variable to check.
+     * @return bool True if the variable is set, false otherwise.
+     */
+    public function __isset(string $name): bool
+    {
+        return isset($this->variables[$name]);
+    }
+
+    /**
      * Renders the template with the provided variables.
      *
      * @param array $variables An associative array of variables to be made available to the template.
@@ -66,16 +99,6 @@ class AdvancedTemplate implements TemplateInterface
         }
 
         return $content;
-    }
-
-    /**
-     * Includes a template file in the context of this object.
-     *
-     * @param string $templatePath The path to the template file.
-     */
-    private function includeTemplate(string $templatePath): void
-    {
-        include $templatePath;
     }
 
     /**
@@ -113,35 +136,12 @@ class AdvancedTemplate implements TemplateInterface
     }
 
     /**
-     * Magic method to access variables as properties.
+     * Includes a template file in the context of this object.
      *
-     * @param string $name The name of the variable to access.
-     * @return mixed The value of the variable or null if it doesn't exist.
+     * @param string $templatePath The path to the template file.
      */
-    public function __get(string $name): mixed
+    private function includeTemplate(string $templatePath): void
     {
-        return $this->variables[$name] ?? null;
-    }
-
-    /**
-     * Magic method to set variables as properties.
-     *
-     * @param string $name The name of the variable to set.
-     * @param mixed $value The value to set for the variable.
-     */
-    public function __set(string $name, mixed $value): void
-    {
-        $this->variables[$name] = $value;
-    }
-
-    /**
-     * Magic method to check if a variable is set.
-     *
-     * @param string $name The name of the variable to check.
-     * @return bool True if the variable is set, false otherwise.
-     */
-    public function __isset(string $name): bool
-    {
-        return isset($this->variables[$name]);
+        include $templatePath;
     }
 }
