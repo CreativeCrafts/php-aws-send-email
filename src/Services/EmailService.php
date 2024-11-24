@@ -10,7 +10,6 @@ use Aws\Ses\SesClient;
 use CreativeCrafts\EmailService\Interfaces\EmailServiceInterface;
 use CreativeCrafts\EmailService\Interfaces\RateLimiterInterface;
 use CreativeCrafts\EmailService\Interfaces\TemplateEngineInterface;
-use Exception;
 use GuzzleHttp\Promise\PromiseInterface;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
@@ -20,52 +19,32 @@ use RuntimeException;
 
 class EmailService implements EmailServiceInterface
 {
-    private const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
-
+    private const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 MB
     private const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 
     protected string $returnPath = '';
 
     private SesClient $sesClient;
-
     private LoggerInterface $logger;
-
     private ?RateLimiterInterface $rateLimiter;
-
     private ?TemplateEngineInterface $templateEngine;
 
     private string $senderEmail = '';
-
     private string $senderName = '';
-
     private string $recipientEmail = '';
-
     private string $subject = '';
-
     private string $bodyText = '';
-
     private string $bodyHtml = '';
-
     private array $attachments = [];
 
     private string $boundary;
-
     private array $messageBody = [];
-
     private array $emailHeaders = [];
 
     /**
-     * Initializes the EmailService with required dependencies.
-     * This constructor sets up the EmailService with the necessary components for sending emails,
-     * including an SES client, logger, rate limiter, and template engine. It also generates a
-     * unique boundary string for use in multipart email messages.
+     * Constructor for EmailService.
      *
-     * @param SesClient $sesClient The Amazon SES client for sending emails.
-     * @param LoggerInterface|null $logger An optional PSR-3 compliant logger for logging email operations.
-     *                                     If not provided, a NullLogger will be used.
-     * @param RateLimiterInterface|null $rateLimiter An optional rate limiter to control email sending frequency.
-     * @param TemplateEngineInterface|null $templateEngine An optional template engine for rendering email templates.
-     * @throws RandomException If there's an error generating random bytes for the boundary string.
+     * @throws RandomException
      */
     public function __construct(
         SesClient $sesClient,
@@ -81,119 +60,81 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Sets the return path for the email.
-     * This method sets the return path (also known as the bounce address) for the email.
-     * It validates the provided email address before setting it.
-     *
-     * @param string $returnPath The email address to be used as the return path.
-     * @return self Returns the current instance to allow method chaining.
-     * @throws InvalidArgumentException If the provided email address is invalid.
-     */
-    public function setReturnPath(string $returnPath): self
-    {
-        if (!$this->validateEmail($returnPath)) {
-            throw new InvalidArgumentException('Invalid email address');
-        }
-        $this->returnPath = $returnPath;
-        return $this;
-    }
-
-    /**
-     * Validates an email address.
-     * This method checks if the given email address is valid by using PHP's built-in
-     * filter_var function and verifying the existence of an MX record for the domain.
-     *
-     * @param string $email The email address to validate.
-     * @return bool Returns true if the email is valid and has a valid MX record,
-     *              false otherwise.
-     */
-    protected function validateEmail(string $email): bool
-    {
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return false;
-        }
-
-        $domain = strrchr($email, "@");
-        if ($domain === false) {
-            return false;
-        }
-
-        $domain = substr($domain, 1);
-        return checkdnsrr($domain, "MX");
-    }
-
-    /**
-     * Sets the sender's email address for the email.
-     * This method validates the provided email address before setting it.
-     * If the email is invalid, an exception is thrown.
-     *
-     * @param string $email The email address of the sender.
-     * @return self Returns the current instance of the class for method chaining.
-     * @throws InvalidArgumentException If the provided email is invalid.
+     * Sets the sender's email address.
      */
     public function setSenderEmail(string $email): self
     {
-        if (!$this->validateEmail($email)) {
-            throw new InvalidArgumentException('Invalid sender email');
-        }
         $this->senderEmail = $email;
         return $this;
     }
 
     /**
-     * Sets the sender's name for the email.
-     * This method sanitizes the provided name to prevent XSS attacks and sets it as the sender's name.
-     * It uses htmlspecialchars to convert special characters to HTML entities.
-     *
-     * @param string $name The name of the sender to be set.
-     * @return self Returns the current instance of the class for method chaining.
+     * Sets the sender's name.
      */
     public function setSenderName(string $name): self
     {
-        $this->senderName = htmlspecialchars($name, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $this->senderName = $name;
         return $this;
     }
 
     /**
-     * Sets the recipient's email address for the email.
-     * This method validates the provided email address before setting it as the recipient's email.
-     * If the email is invalid, an exception is thrown.
-     *
-     * @param string $email The email address of the recipient.
-     * @return self Returns the current instance of the class for method chaining.
-     * @throws InvalidArgumentException If the provided email is invalid.
+     * Sets the recipient's email address.
      */
     public function setRecipientEmail(string $email): self
     {
-        if (!$this->validateEmail($email)) {
-            throw new InvalidArgumentException('Invalid recipient email');
-        }
         $this->recipientEmail = $email;
         return $this;
     }
 
     /**
-     * Sets the subject of the email.
-     * This method sanitizes the provided subject to prevent XSS attacks
-     * by converting special characters to HTML entities using htmlspecialchars.
-     *
-     * @param string $subject The subject line for the email.
-     * @return self Returns the current instance of the class for method chaining.
+     * Sets the email subject.
      */
     public function setSubject(string $subject): self
     {
-        $this->subject = htmlspecialchars($subject, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $this->subject = $subject;
+        return $this;
+    }
+
+    /**
+     * Sets the plain text body of the email.
+     */
+    public function setBodyText(string $bodyText): self
+    {
+        $this->bodyText = $bodyText;
+        return $this;
+    }
+
+    /**
+     * Sets the HTML body of the email.
+     */
+    public function setBodyHtml(string $bodyHtml): self
+    {
+        $this->bodyHtml = $bodyHtml;
+        return $this;
+    }
+
+    /**
+     * Sets the email template.
+     */
+    public function setEmailTemplate(string $templateName, array $variables = []): self
+    {
+        if (!$this->templateEngine) {
+            throw new RuntimeException('Template engine not set.');
+        }
+
+        $template = $this->templateEngine->load($templateName);
+        $renderedContent = $template->render($variables);
+
+        // Assuming the template provides both text and HTML versions
+        // Adjust as needed based on your template engine's implementation
+        $this->bodyText = strip_tags($renderedContent);
+        $this->bodyHtml = $renderedContent;
+
         return $this;
     }
 
     /**
      * Adds an attachment to the email.
-     * This method validates the attachment file and adds it to the list of attachments
-     * to be sent with the email. It performs checks on file existence, size, and type.
-     *
-     * @param string $filePath The full path to the attachment file.
-     * @return self Returns the current instance of the class for method chaining.
-     * @throws InvalidArgumentException If the file doesn't exist, exceeds size limit, or has an unsupported type.
      */
     public function addAttachment(string $filePath): self
     {
@@ -204,12 +145,6 @@ class EmailService implements EmailServiceInterface
 
     /**
      * Validates an attachment file for email sending.
-     * This method checks if the attachment file exists, is within the allowed size limit,
-     * and has an allowed MIME type.
-     *
-     * @param string $filePath The full path to the attachment file.
-     * @return void
-     * @throws InvalidArgumentException If the file doesn't exist, exceeds size limit, or has an unsupported type.
      */
     private function validateAttachment(string $filePath): void
     {
@@ -218,103 +153,18 @@ class EmailService implements EmailServiceInterface
         }
 
         $fileSize = filesize($filePath);
-        if ($fileSize > self::MAX_ATTACHMENT_SIZE) {
-            throw new InvalidArgumentException('Attachment file size exceeds the maximum allowed size');
+        if ($fileSize === false || $fileSize > self::MAX_ATTACHMENT_SIZE) {
+            throw new InvalidArgumentException('Attachment file size exceeds the maximum allowed size of 10 MB.');
         }
 
         $mimeType = mime_content_type($filePath);
-        if (!in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
-            throw new InvalidArgumentException('Attachment file type is not allowed: ' . $mimeType);
+        if ($mimeType === false || !in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
+            throw new InvalidArgumentException('Attachment file type is not allowed: ' . ($mimeType ?: 'Unknown'));
         }
-    }
-
-    /**
-     * Sets the email template and renders it with the provided variables.
-     * This method loads a template, renders it with the given variables,
-     * sets the rendered content as the HTML body of the email, and
-     * generates a plain text version of the body.
-     *
-     * @param string $templateName The name or identifier of the email template to load.
-     * @param array $variables An associative array of variables to be used in rendering the template.
-     * @return self Returns the current instance of the class for method chaining.
-     * @throws RuntimeException If the template engine is not set.
-     */
-    public function setEmailTemplate(string $templateName, array $variables): self
-    {
-        if (!$this->templateEngine instanceof TemplateEngineInterface) {
-            throw new RuntimeException('Template engine is not set');
-        }
-        try {
-            $template = $this->templateEngine->load($templateName);
-            $renderedHtml = $template->render($variables);
-
-            $this->setBodyHtml($renderedHtml);
-            $this->setBodyText($this->htmlToText($renderedHtml));
-        } catch (Exception $e) {
-            throw new RuntimeException('Error rendering template: ' . $e->getMessage(), $e->getCode(), $e);
-        }
-
-        return $this;
-    }
-
-    /**
-     * Sets the HTML body of the email.
-     * This method sanitizes the provided HTML content to prevent XSS attacks
-     * by using PHP's filter_var function with FILTER_SANITIZE_FULL_SPECIAL_CHARS.
-     *
-     * @param string $bodyHtml The HTML content for the email body.
-     * @return self Returns the current instance of the class for method chaining.
-     */
-    public function setBodyHtml(string $bodyHtml): self
-    {
-        $this->bodyHtml = $bodyHtml;
-        return $this;
-    }
-
-    /**
-     * Sets the plain text body of the email.
-     * This method sanitizes the provided text to prevent XSS attacks
-     * by converting special characters to HTML entities using htmlspecialchars.
-     *
-     * @param string $bodyText The plain text content for the email body.
-     * @return self Returns the current instance of the class for method chaining.
-     */
-    public function setBodyText(string $bodyText): self
-    {
-        $this->bodyText = $bodyText;
-        return $this;
-    }
-
-    /**
-     * Converts HTML content to plain text.
-     * This function removes HTML tags, decodes HTML entities, and normalizes whitespace
-     * to create a plain text version of the given HTML content.
-     *
-     * @param string $html The HTML content to be converted to plain text.
-     * @return string The resulting plain text version of the input HTML.
-     */
-    private function htmlToText(string $html): string
-    {
-        /** @var string $html */
-        $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
-        /** @var string $html */
-        $html = preg_replace('/<\/p>/i', "\n\n", $html);
-        $text = strip_tags($html);
-        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        return trim($text);
     }
 
     /**
      * Sends an email using Amazon SES.
-     * This method performs rate limiting checks, validates email data, constructs the message,
-     * and sends the email using Amazon SES. It logs the result of the operation.
-     *
-     * @return Result The result object from Amazon SES containing information about the sent email,
-     *                including the message ID.
-     * @throws InvalidArgumentException If the email data validation fails.
-     * @throws AwsException If an error occurs while sending the email through Amazon SES.
-     * @throws RandomException If there's an error in generating random data for message boundaries.
-     * @throws RuntimeException If the email sending rate limit is exceeded.
      */
     public function sendEmail(): Result
     {
@@ -329,6 +179,7 @@ class EmailService implements EmailServiceInterface
         $this->setEmailHeaders();
         $this->constructMessageBody();
 
+        // Combine headers and body with proper line breaks
         $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
 
         try {
@@ -336,8 +187,9 @@ class EmailService implements EmailServiceInterface
                 'RawMessage' => [
                     'Data' => $rawMessage,
                 ],
-                'Source' => $this->source(),
-                'ReturnPath' => $this->returnPath,
+                'Source' => $this->getFormattedSender(),
+                // Optionally, include 'ReturnPath' if needed
+                // 'ReturnPath' => $this->returnPath,
             ]);
             $this->logger->info('Email sent successfully', [
                 'messageId' => $result->get('MessageId'),
@@ -352,80 +204,58 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Performs full validation of email data before sending.
-     * This method checks the validity of the sender and recipient email addresses,
-     * ensures that a subject is provided, and verifies that either a text or HTML body
-     * is set for the email.
-     *
-     * @throws InvalidArgumentException If any of the required email data is missing or invalid:
-     *                                  - Invalid sender email
-     *                                  - Invalid recipient email
-     *                                  - Missing subject
-     *                                  - Missing both text and HTML body
+     * Validates that all required email data is set.
      */
-    protected function fullEmailDataValidation(): void
+    private function fullEmailDataValidation(): void
     {
-        if (!$this->validateEmail($this->senderEmail)) {
-            throw new InvalidArgumentException('A valid sender email is required');
+        if (empty($this->senderEmail)) {
+            throw new RuntimeException('Sender email is not set.');
         }
-        if (!$this->validateEmail($this->recipientEmail)) {
-            throw new InvalidArgumentException('A valid recipient email is required');
+
+        if (empty($this->recipientEmail)) {
+            throw new RuntimeException('Recipient email is not set.');
         }
-        if ($this->subject === '' || $this->subject === '0') {
-            throw new InvalidArgumentException('Subject is required');
+
+        if (empty($this->subject)) {
+            throw new RuntimeException('Email subject is not set.');
         }
-        if (($this->bodyText === '' || $this->bodyText === '0') && ($this->bodyHtml === '' || $this->bodyHtml === '0')) {
-            throw new InvalidArgumentException('Either text or html body must be set');
+
+        if (empty($this->bodyText) && empty($this->bodyHtml)) {
+            throw new RuntimeException('Email body is not set.');
         }
     }
 
     /**
-     * Sets the email headers for the message.
-     * This method populates the emailHeaders property with the necessary headers
-     * for sending an email. It sets the From, Reply-To, To, Subject, and MIME-Version
-     * headers using the class properties and helper methods.
-     *
-     * @return void
+     * Sets the email headers.
      */
     protected function setEmailHeaders(): void
     {
+        // Initialize headers as an indexed array of strings
         $this->emailHeaders = [
-            'From' => $this->source(),
-            'Reply-To' => $this->source(),
-            'To' => $this->recipientEmail,
-            'Subject' => $this->encodeHeader($this->subject),
-            'MIME-Version' => '1.0',
+            "From: {$this->getFormattedSender()}",
+            "Reply-To: {$this->getFormattedSender()}",
+            "To: {$this->recipientEmail}",
+            "Subject: {$this->encodeHeader($this->subject)}",
+            "MIME-Version: 1.0",
         ];
     }
 
     /**
-     * Generates the 'From' field for the email header.
-     * This method constructs the 'From' field of the email header. If a sender name
-     * is set, it combines the name and email address in the format "Name <email@example.com>".
-     * If no sender name is set, it returns just the email address.
-     *
-     * @return string The formatted 'From' field for the email header.
-     *                If sender name is set: "Sender Name <sender@example.com>"
-     *                If sender name is not set: "sender@example.com"
+     * Returns the formatted sender (with name if available).
      */
-    protected function source(): string
+    private function getFormattedSender(): string
     {
-        if ($this->senderName !== '' && $this->senderName !== '0') {
-            $encodedName = '=?UTF-8?B?' . base64_encode($this->senderName) . '?=';
-            return sprintf('%s <%s>', $encodedName, $this->senderEmail);
+        if ($this->senderName) {
+            // Encode the sender name to handle special characters
+            $encodedName = $this->encodeHeader($this->senderName);
+            return "{$encodedName} <{$this->senderEmail}>";
         }
+
         return $this->senderEmail;
     }
 
     /**
      * Encodes a header value if it contains non-ASCII characters.
-     * This function checks if the given header value contains any non-ASCII characters.
-     * If it does, the value is encoded using Base64 encoding and formatted according to
-     * the MIME encoded-word syntax for use in email headers.
-     *
-     * @param string $value The header value to be encoded.
-     * @return string The encoded header value if it contains non-ASCII characters,
-     *                or the original value if it only contains ASCII characters.
      */
     private function encodeHeader(string $value): string
     {
@@ -437,91 +267,68 @@ class EmailService implements EmailServiceInterface
 
     /**
      * Constructs the message body for the email.
-     * This method creates the structure of the email message body, handling both
-     * plain text and HTML content, as well as attachments if present. It sets up
-     * appropriate MIME boundaries and content types for multipart messages.
-     * If attachments are present, it creates a multipart/mixed message with nested
-     * multipart/alternative for text and HTML content. If no attachments are present,
-     * it creates a simple multipart/alternative message.
-     * The constructed message body is stored in the $messageBody property, and
-     * relevant headers are set in the $emailHeaders property.
      *
-     * @throws RandomException If there's an error generating random bytes for boundaries.
-     * @return void
+     * @throws RandomException
      */
     protected function constructMessageBody(): void
     {
-        $mixedBoundary = '=_Mixed_' . bin2hex(random_bytes(16));
-        $alternativeBoundary = $this->boundary;
+        if (!empty($this->attachments)) {
+            $mixedBoundary = '=_Mixed_' . bin2hex(random_bytes(16));
+            $alternativeBoundary = $this->boundary;
 
-        $this->messageBody = [];
+            // Update the Content-Type header to multipart/mixed
+            $this->emailHeaders[] = "Content-Type: multipart/mixed; boundary=\"{$mixedBoundary}\"";
 
-        if ($this->attachments !== []) {
-            // Start the mixed boundary
-            $this->emailHeaders['Content-Type'] = 'multipart/mixed; boundary="' . $mixedBoundary . '"';
+            $this->messageBody = [
+                "--{$mixedBoundary}",
+                "Content-Type: multipart/alternative; boundary=\"{$alternativeBoundary}\"",
+                "",
+            ];
 
-            $this->messageBody[] = '--' . $mixedBoundary;
-
-            // Create the alternative part
-            $this->messageBody[] = 'Content-Type: multipart/alternative; boundary="' . $alternativeBoundary . '"';
-            $this->messageBody[] = '';
-
+            // Add the alternative parts (text and HTML)
             $this->constructAlternativePart();
 
-            // Attachments
+            // Add attachments
             $this->processEmailAttachments($mixedBoundary);
 
             // End the mixed boundary
-            $this->messageBody[] = '--' . $mixedBoundary . '--';
+            $this->messageBody[] = "--{$mixedBoundary}--";
         } else {
-            // No attachments, use alternative boundary
+            // No attachments, use multipart/alternative
             $this->constructAlternativePart();
-            $this->emailHeaders['Content-Type'] = 'multipart/alternative; boundary="' . $alternativeBoundary . '"';
+
+            // Update the Content-Type header to multipart/alternative
+            $this->emailHeaders[] = "Content-Type: multipart/alternative; boundary=\"{$this->boundary}\"";
         }
     }
 
     /**
-     * Constructs the alternative part of the email message body.
-     * This method creates the multipart/alternative section of the email,
-     * which includes both plain text and HTML versions of the email content.
-     * It uses the class properties $bodyText and $bodyHtml to populate the
-     * respective parts, and $boundary to separate the different sections.
-     * The constructed parts are added to the $messageBody array property,
-     * which is used later to build the complete email message.
-     *
-     * @return void This method doesn't return a value but modifies the $messageBody property.
+     * Constructs the alternative part of the message body (text and HTML).
      */
     private function constructAlternativePart(): void
     {
         // Text part
-        $this->messageBody[] = '--' . $this->boundary;
-        $this->messageBody[] = 'Content-Type: text/plain; charset=UTF-8';
-        $this->messageBody[] = 'Content-Transfer-Encoding: 7bit';
-        $this->messageBody[] = '';
+        $this->messageBody[] = "--{$this->boundary}";
+        $this->messageBody[] = "Content-Type: text/plain; charset=UTF-8";
+        $this->messageBody[] = "Content-Transfer-Encoding: 7bit";
+        $this->messageBody[] = "";
         $this->messageBody[] = $this->bodyText;
-        $this->messageBody[] = '';
+        $this->messageBody[] = "";
 
         // HTML part
-        $this->messageBody[] = '--' . $this->boundary;
-        $this->messageBody[] = 'Content-Type: text/html; charset=UTF-8';
-        $this->messageBody[] = 'Content-Transfer-Encoding: 7bit';
-        $this->messageBody[] = '';
+        $this->messageBody[] = "--{$this->boundary}";
+        $this->messageBody[] = "Content-Type: text/html; charset=UTF-8";
+        $this->messageBody[] = "Content-Transfer-Encoding: 7bit";
+        $this->messageBody[] = "";
         $this->messageBody[] = $this->bodyHtml;
-        $this->messageBody[] = '';
+        $this->messageBody[] = "";
 
         // End of alternative part
-        $this->messageBody[] = '--' . $this->boundary . '--';
+        $this->messageBody[] = "--{$this->boundary}--";
     }
 
     /**
      * Processes email attachments and adds them to the message body.
-     * This method iterates through each attachment, determines its MIME type,
-     * reads its content, and adds it to the message body with appropriate headers.
-     * It handles the formatting required for email attachments, including base64 encoding.
-     *
-     * @param string $mixedBoundary The boundary string used to separate different parts of the multipart email.
-     * @return void This method doesn't return a value but modifies the internal $messageBody property.
-     * @throws RuntimeException If an attachment file cannot be read.
      */
     protected function processEmailAttachments(string $mixedBoundary): void
     {
@@ -534,27 +341,19 @@ class EmailService implements EmailServiceInterface
                 throw new RuntimeException('Failed to read attachment: ' . $attachment);
             }
 
-            $this->messageBody[] = '--' . $mixedBoundary;
-            $this->messageBody[] = 'Content-Type: ' . $mimeType . '; name="' . $filename . '"';
-            $this->messageBody[] = 'Content-Disposition: attachment; filename="' . $filename . '"';
-            $this->messageBody[] = 'Content-Transfer-Encoding: base64';
-            $this->messageBody[] = '';
+            $this->messageBody[] = "--{$mixedBoundary}";
+            $this->messageBody[] = "Content-Type: {$mimeType}; name=\"{$filename}\"";
+            $this->messageBody[] = "Content-Disposition: attachment; filename=\"{$filename}\"";
+            $this->messageBody[] = "Content-Transfer-Encoding: base64";
+            $this->messageBody[] = "";
             $this->messageBody[] = chunk_split(base64_encode($fileContent));
         }
     }
 
     /**
      * Sends an email asynchronously using Amazon SES.
-     * This method performs rate limiting checks, validates email data, constructs the message,
-     * and sends the email asynchronously using Amazon SES. It returns a promise that resolves
-     * with the result of the email sending operation or rejects with an exception.
      *
-     * @return PromiseInterface A promise that resolves with the result of the email sending operation.
-     *                          The result contains information about the sent email, including the message ID.
-     * @throws RuntimeException If the email sending rate limit is exceeded.
-     * @throws InvalidArgumentException If the email data validation fails.
-     * @throws RandomException If there's an error in generating random data for message boundaries.
-     * @throws AwsException If an error occurs while sending the email through Amazon SES.
+     * @throws RandomException
      */
     public function sendEmailAsync(): PromiseInterface
     {
@@ -569,14 +368,16 @@ class EmailService implements EmailServiceInterface
         $this->setEmailHeaders();
         $this->constructMessageBody();
 
+        // Combine headers and body with proper line breaks
         $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
 
         return $this->sesClient->sendRawEmailAsync([
             'RawMessage' => [
                 'Data' => $rawMessage,
             ],
-            'Source' => $this->source(),
-            'ReturnPath' => $this->returnPath,
+            'Source' => $this->getFormattedSender(),
+            // Optionally, include 'ReturnPath' if needed
+            // 'ReturnPath' => $this->returnPath,
         ])->then(
             function ($result) {
                 $this->logger->info('Email sent successfully', [
