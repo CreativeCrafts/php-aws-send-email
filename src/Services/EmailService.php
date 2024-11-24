@@ -328,13 +328,14 @@ class EmailService implements EmailServiceInterface
         $this->constructMessageBody();
 
         $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
-        $rawMessageBase64 = base64_encode($rawMessage);
 
         try {
             $result = $this->sesClient->sendRawEmail([
                 'RawMessage' => [
-                    'Data' => $rawMessageBase64,
+                    'Data' => $rawMessage,
                 ],
+                'Source' => $this->source(),
+                'ReturnPath' => $this->returnPath,
             ]);
             $this->logger->info('Email sent successfully', [
                 'messageId' => $result->get('MessageId'),
@@ -347,6 +348,7 @@ class EmailService implements EmailServiceInterface
             throw $exception;
         }
     }
+
 
     /**
      * Performs full validation of email data before sending.
@@ -390,11 +392,11 @@ class EmailService implements EmailServiceInterface
             'Reply-To: ' . $this->source(),
             'To: ' . $this->recipientEmail,
             'Subject: =?UTF-8?B?' . base64_encode($this->subject) . '?=',
-            'Return-Path: ' . $this->returnPath,
             'MIME-Version: 1.0',
             'Content-Type: multipart/alternative; boundary="' . $this->boundary . '"',
         ];
     }
+
 
     /**
      * Generates the 'From' field for the email header.
@@ -409,10 +411,12 @@ class EmailService implements EmailServiceInterface
     protected function source(): string
     {
         if ($this->senderName !== '' && $this->senderName !== '0') {
-            return sprintf('%s <%s>', $this->senderName, $this->senderEmail);
+            $encodedName = '=?UTF-8?B?' . base64_encode($this->senderName) . '?=';
+            return sprintf('%s <%s>', $encodedName, $this->senderEmail);
         }
         return $this->senderEmail;
     }
+
 
     /**
      * Constructs the message body for the email.
@@ -424,51 +428,24 @@ class EmailService implements EmailServiceInterface
      */
     protected function constructMessageBody(): void
     {
-        // Add the plain text part
-        $this->messageBody[] = "--{$this->boundary}\r\n";
-        $this->messageBody[] = "Content-Type: text/plain; charset=UTF-8\r\n";
-        $this->messageBody[] = "Content-Transfer-Encoding: base64\r\n\r\n";
-        $this->messageBody[] = chunk_split(base64_encode($this->bodyText)) . "\r\n";
+        // Start the multipart message
+        $this->messageBody[] = "--{$this->boundary}";
 
-        // Add the HTML part
-        $this->messageBody[] = "--{$this->boundary}\r\n";
-        $this->messageBody[] = "Content-Type: text/plain; charset=UTF-8\r\n";
-        $this->messageBody[] = "Content-Transfer-Encoding: base64\r\n\r\n";
-        $this->messageBody[] = chunk_split(base64_encode($this->bodyHtml)) . "\r\n";
+        // Plain text part
+        $this->messageBody[] = "Content-Type: text/plain; charset=UTF-8";
+        $this->messageBody[] = "Content-Transfer-Encoding: base64";
+        $this->messageBody[] = "";
+        $this->messageBody[] = chunk_split(base64_encode($this->bodyText));
 
-        // Add any attachments
-        $this->processEmailAttachments();
+        // HTML part
+        $this->messageBody[] = "--{$this->boundary}";
+        $this->messageBody[] = "Content-Type: text/html; charset=UTF-8";
+        $this->messageBody[] = "Content-Transfer-Encoding: base64";
+        $this->messageBody[] = "";
+        $this->messageBody[] = chunk_split(base64_encode($this->bodyHtml));
 
-        // End the message
+        // End the multipart message
         $this->messageBody[] = "--{$this->boundary}--";
-    }
-
-    /**
-     * Processes email attachments and adds them to the message body.
-     * This method iterates through all attachments, reads their content,
-     * encodes them in base64, and adds them to the email message body
-     * with appropriate MIME headers.
-     *
-     * @throws RuntimeException If an attachment file cannot be read.
-     */
-    protected function processEmailAttachments(): void
-    {
-        foreach ($this->attachments as $attachment) {
-            $attachmentContent = file_get_contents($attachment);
-            if ($attachmentContent === false) {
-                throw new RuntimeException("Failed to read attachment file: $attachment");
-            }
-            $attachmentContent = chunk_split(base64_encode($attachmentContent));
-            $filename = basename($attachment);
-            $mimeType = mime_content_type($attachment) ?: $this->mimeType;
-
-            $this->messageBody[] = '--' . $this->boundary;
-            $this->messageBody[] = 'Content-Type: ' . $mimeType . '; name="' . $filename . '"';
-            $this->messageBody[] = 'Content-Disposition: attachment; filename="' . $filename . '"';
-            $this->messageBody[] = 'Content-Transfer-Encoding: base64';
-            $this->messageBody[] = '';
-            $this->messageBody[] = $attachmentContent;
-        }
     }
 
     /**
@@ -513,5 +490,33 @@ class EmailService implements EmailServiceInterface
                 throw $exception;
             }
         );
+    }
+
+    /**
+     * Processes email attachments and adds them to the message body.
+     * This method iterates through all attachments, reads their content,
+     * encodes them in base64, and adds them to the email message body
+     * with appropriate MIME headers.
+     *
+     * @throws RuntimeException If an attachment file cannot be read.
+     */
+    protected function processEmailAttachments(): void
+    {
+        foreach ($this->attachments as $attachment) {
+            $attachmentContent = file_get_contents($attachment);
+            if ($attachmentContent === false) {
+                throw new RuntimeException("Failed to read attachment file: $attachment");
+            }
+            $attachmentContent = chunk_split(base64_encode($attachmentContent));
+            $filename = basename($attachment);
+            $mimeType = mime_content_type($attachment) ?: $this->mimeType;
+
+            $this->messageBody[] = '--' . $this->boundary;
+            $this->messageBody[] = 'Content-Type: ' . $mimeType . '; name="' . $filename . '"';
+            $this->messageBody[] = 'Content-Disposition: attachment; filename="' . $filename . '"';
+            $this->messageBody[] = 'Content-Transfer-Encoding: base64';
+            $this->messageBody[] = '';
+            $this->messageBody[] = $attachmentContent;
+        }
     }
 }
