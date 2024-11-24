@@ -25,3 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.14.0] - 2024-11-24
 
 - Fixed bug with sending email with attachment
+
+## [1.15.0] - 2024-11-24
+
+- Code cleanup
+- Added more comments to the code
+- Stable release
