@@ -10,27 +10,32 @@ use RuntimeException;
 class AdvancedTemplate implements TemplateInterface
 {
     private string $templatePath;
-
     private string $partialDir;
-
     private string $templateExtension;
-
     private array $variables = [];
+    private array $globalVariables;
 
     /**
      * Constructor for the AdvancedTemplate class.
      *
      * @param string $templatePath The file path to the template file to be used for rendering.
      * @param string $partialDir The directory path where partial templates are stored.
+     * @param string $templateExtension The file extension for template files.
+     * @param array $globalVariables An array of global variables available to all templates.
      */
-    public function __construct(string $templatePath, string $partialDir, string $templateExtension = '.html')
-    {
+    public function __construct(
+        string $templatePath,
+        string $partialDir,
+        string $templateExtension = '.html',
+        array $globalVariables = []
+    ) {
         $this->templatePath = $templatePath;
         $this->partialDir = rtrim($partialDir, '/\\');
         $this->templateExtension = str_contains(
             $templateExtension,
             '.'
         ) ? $templateExtension : '.' . $templateExtension;
+        $this->globalVariables = $globalVariables;
     }
 
     /**
@@ -42,14 +47,14 @@ class AdvancedTemplate implements TemplateInterface
      */
     public function render(array $variables): string
     {
-        if (! file_exists($this->templatePath)) {
+        if (!file_exists($this->templatePath)) {
             throw new RuntimeException("Template file does not exist: {$this->templatePath}");
         }
 
-        $this->variables = $variables;
+        $this->variables = array_merge($this->globalVariables, $variables);
 
         ob_start();
-        $this->includeTemplate($this->templatePath, $this->variables);
+        $this->includeTemplate($this->templatePath);
         $content = ob_get_clean();
 
         if ($content === false) {
@@ -60,18 +65,12 @@ class AdvancedTemplate implements TemplateInterface
     }
 
     /**
-     * Includes a template file with variables in a secure way.
+     * Includes a template file in the context of this object.
      *
      * @param string $templatePath The path to the template file.
-     * @param array $variables Variables to be available in the template.
      */
-    private function includeTemplate(string $templatePath, array $variables): void
+    private function includeTemplate(string $templatePath): void
     {
-        // Make variables available to the included template
-        foreach ($variables as $key => $value) {
-            $$key = $value;
-        }
-
         include $templatePath;
     }
 
@@ -87,16 +86,20 @@ class AdvancedTemplate implements TemplateInterface
     {
         $partialPath = $this->partialDir . DIRECTORY_SEPARATOR . $partialName . $this->templateExtension;
 
-        if (! file_exists($partialPath)) {
+        if (!file_exists($partialPath)) {
             throw new RuntimeException("Partial template file does not exist: {$partialPath}");
         }
 
-        // Merge the main template variables with the partial-specific variables
-        $mergedVariables = array_merge($this->variables, $variables);
+        // Merge global variables, main template variables, and partial-specific variables
+        $originalVariables = $this->variables;
+        $this->variables = array_merge($this->variables, $variables);
 
         ob_start();
-        $this->includeTemplate($partialPath, $mergedVariables);
+        $this->includeTemplate($partialPath);
         $content = ob_get_clean();
+
+        // Restore original variables
+        $this->variables = $originalVariables;
 
         if ($content === false) {
             throw new RuntimeException("Failed to capture output buffer while rendering partial template.");

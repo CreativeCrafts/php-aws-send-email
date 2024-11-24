@@ -15,26 +15,29 @@ use InvalidArgumentException;
 class AdvancedTemplateEngine implements TemplateEngineInterface
 {
     private string $templateDir;
-
     private string $partialDir;
-
     private string $templateExtension;
+    private array $globalVariables = [];
 
     /**
      * Constructor for AdvancedTemplateEngine.
-     * Initializes the template engine with the specified template and partial directories.
      *
      * @param string $templateDir The directory path where main template files are stored.
      * @param string $partialDir The directory path where partial template files are stored.
      * @param string $templateExtension The file extension for template files (default is '.html').
+     * @param array $globalVariables An array of global variables available to all templates.
      * @throws InvalidArgumentException If the specified template or partial directory does not exist.
      */
-    public function __construct(string $templateDir, string $partialDir, string $templateExtension = '.html')
-    {
-        if (! is_dir($templateDir)) {
+    public function __construct(
+        string $templateDir,
+        string $partialDir,
+        string $templateExtension = '.html',
+        array $globalVariables = []
+    ) {
+        if (!is_dir($templateDir)) {
             throw new InvalidArgumentException("Template directory does not exist: $templateDir");
         }
-        if (! is_dir($partialDir)) {
+        if (!is_dir($partialDir)) {
             throw new InvalidArgumentException("Partial directory does not exist: $partialDir");
         }
         $this->templateDir = rtrim($templateDir, '/\\');
@@ -43,11 +46,11 @@ class AdvancedTemplateEngine implements TemplateEngineInterface
             $templateExtension,
             '.'
         ) ? $templateExtension : '.' . $templateExtension;
+        $this->globalVariables = $globalVariables;
     }
 
     /**
      * Loads a template by its name.
-     * This method constructs the full path to the template file and returns an AdvancedTemplate instance.
      *
      * @param string $templateName The name of the template to load (without file extension).
      * @return TemplateInterface An instance of AdvancedTemplate representing the loaded template.
@@ -56,9 +59,14 @@ class AdvancedTemplateEngine implements TemplateEngineInterface
     public function load(string $templateName): TemplateInterface
     {
         $templatePath = $this->templateDir . DIRECTORY_SEPARATOR . $templateName . $this->templateExtension;
-        if (! file_exists($templatePath)) {
+        if (!file_exists($templatePath)) {
             throw new InvalidArgumentException("Template file does not exist: $templatePath");
         }
-        return new AdvancedTemplate($templatePath, $this->partialDir, $this->templateExtension);
+        return new AdvancedTemplate(
+            $templatePath,
+            $this->partialDir,
+            $this->templateExtension,
+            $this->globalVariables
+        );
     }
 }
