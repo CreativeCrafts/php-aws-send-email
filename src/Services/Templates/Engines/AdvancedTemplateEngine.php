@@ -15,8 +15,11 @@ use InvalidArgumentException;
 class AdvancedTemplateEngine implements TemplateEngineInterface
 {
     private string $templateDir;
+
     private string $partialDir;
+
     private string $templateExtension;
+
     private array $globalVariables = [];
 
     /**
@@ -34,10 +37,10 @@ class AdvancedTemplateEngine implements TemplateEngineInterface
         string $templateExtension = '.html',
         array $globalVariables = []
     ) {
-        if (!is_dir($templateDir)) {
+        if (! is_dir($templateDir)) {
             throw new InvalidArgumentException("Template directory does not exist: $templateDir");
         }
-        if (!is_dir($partialDir)) {
+        if (! is_dir($partialDir)) {
             throw new InvalidArgumentException("Partial directory does not exist: $partialDir");
         }
         $this->templateDir = rtrim($templateDir, '/\\');
@@ -59,7 +62,7 @@ class AdvancedTemplateEngine implements TemplateEngineInterface
     public function load(string $templateName): TemplateInterface
     {
         $templatePath = $this->templateDir . DIRECTORY_SEPARATOR . $templateName . $this->templateExtension;
-        if (!file_exists($templatePath)) {
+        if (! file_exists($templatePath)) {
             throw new InvalidArgumentException("Template file does not exist: $templatePath");
         }
         return new AdvancedTemplate(

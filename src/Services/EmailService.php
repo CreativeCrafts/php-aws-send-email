@@ -52,19 +52,11 @@ class EmailService implements EmailServiceInterface
 
     private array $messageBody = [];
 
-    private string $mimeType = 'application/pdf';
-
     private array $emailHeaders = [];
 
     /**
      * Initializes the EmailService with required dependencies.
-     * This constructor sets up the EmailService with the necessary components
-     * for sending emails, logging, rate limiting, and template rendering.
      *
-     * @param SesClient $sesClient The AWS SES client for sending emails.
-     * @param LoggerInterface|null $logger The logger for recording events and errors (optional).
-     * @param RateLimiterInterface|null $rateLimiter The rate limiter to control email sending frequency (optional).
-     * @param TemplateEngineInterface|null $templateEngine The template engine for rendering email templates (optional).
      * @throws RandomException
      */
     public function __construct(
@@ -77,7 +69,7 @@ class EmailService implements EmailServiceInterface
         $this->logger = $logger ?? new NullLogger();
         $this->rateLimiter = $rateLimiter;
         $this->templateEngine = $templateEngine;
-        $this->boundary = bin2hex(random_bytes(16));
+        $this->boundary = '=_Part_' . bin2hex(random_bytes(16));
     }
 
     /**
@@ -204,17 +196,11 @@ class EmailService implements EmailServiceInterface
 
     /**
      * Validates an attachment file for email sending.
-     * This function checks if the attachment file exists, its size is within
-     * the allowed limit, and its MIME type is among the allowed types.
-     *
-     * @param string $filePath The full path to the attachment file.
-     * @throws InvalidArgumentException If the file doesn't exist, exceeds the size limit,
-     *                                  or has an unsupported MIME type.
      */
     private function validateAttachment(string $filePath): void
     {
         if (!file_exists($filePath)) {
-            throw new InvalidArgumentException('Attachment file does not exist');
+            throw new InvalidArgumentException('Attachment file does not exist: ' . $filePath);
         }
 
         $fileSize = filesize($filePath);
@@ -224,7 +210,7 @@ class EmailService implements EmailServiceInterface
 
         $mimeType = mime_content_type($filePath);
         if (!in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
-            throw new InvalidArgumentException('Attachment file type is not allowed');
+            throw new InvalidArgumentException('Attachment file type is not allowed: ' . $mimeType);
         }
     }
 
@@ -295,25 +281,17 @@ class EmailService implements EmailServiceInterface
      */
     private function htmlToText(string $html): string
     {
+        /** @var string $html */
         $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
+        /** @var string $html */
         $html = preg_replace('/<\/p>/i', "\n\n", $html);
         $text = strip_tags($html);
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         return trim($text);
     }
 
-
     /**
      * Sends an email using Amazon SES.
-     * This method performs rate limiting checks, validates email data,
-     * constructs the message body, and then sends the email. It logs
-     * the success or failure of the email sending operation.
-     *
-     * @return Result The result of the email sending operation.
-     *                Contains information such as the MessageId on success.
-     * @throws RuntimeException If the email sending rate limit is exceeded.
-     * @throws InvalidArgumentException If the email data validation fails.
-     * @throws AwsException If there's an error during the AWS SES API call.
      */
     public function sendEmail(): Result
     {
@@ -350,7 +328,6 @@ class EmailService implements EmailServiceInterface
         }
     }
 
-
     /**
      * Performs full validation of email data before sending.
      * This method checks the validity of the sender and recipient email addresses,
@@ -381,23 +358,17 @@ class EmailService implements EmailServiceInterface
 
     /**
      * Sets the email headers for the message.
-     * This method populates the $emailHeaders array with necessary headers for the email,
-     * including From, Reply-To, Return-Path, Subject, MIME-Version, and Content-Type.
-     * It uses class properties to set these values, ensuring that the email is properly
-     * formatted for sending.
      */
     protected function setEmailHeaders(): void
     {
         $this->emailHeaders = [
-            'From: ' . $this->source(),
-            'Reply-To: ' . $this->source(),
-            'To: ' . $this->recipientEmail,
-            'Subject: =?UTF-8?B?' . base64_encode($this->subject) . '?=',
-            'MIME-Version: 1.0',
-            'Content-Type: multipart/alternative; boundary="' . $this->boundary . '"',
+            'From' => $this->source(),
+            'Reply-To' => $this->source(),
+            'To' => $this->recipientEmail,
+            'Subject' => $this->encodeHeader($this->subject),
+            'MIME-Version' => '1.0',
         ];
     }
-
 
     /**
      * Generates the 'From' field for the email header.
@@ -418,48 +389,105 @@ class EmailService implements EmailServiceInterface
         return $this->senderEmail;
     }
 
+    /**
+     * Encodes a header value if necessary.
+     */
+    private function encodeHeader(string $value): string
+    {
+        if (preg_match('/[\x80-\xFF]/', $value)) {
+            return '=?UTF-8?B?' . base64_encode($value) . '?=';
+        }
+        return $value;
+    }
 
     /**
      * Constructs the message body for the email.
-     * This method builds the MIME-compliant message body structure for the email,
-     * including headers, text and HTML content, and prepares for attachments.
-     * It sets up the multipart structure with appropriate boundaries and content types.
-     * After constructing the main body, it processes any attachments and finalizes
-     * the message structure.
+     *
+     * @throws RandomException
      */
     protected function constructMessageBody(): void
     {
-        // Start the multipart message
-        $this->messageBody[] = "--{$this->boundary}";
+        $mixedBoundary = '=_Mixed_' . bin2hex(random_bytes(16));
+        $alternativeBoundary = $this->boundary;
 
-        // Plain text part
-        $this->messageBody[] = "Content-Type: text/plain; charset=UTF-8";
-        $this->messageBody[] = "Content-Transfer-Encoding: base64";
-        $this->messageBody[] = "";
-        $this->messageBody[] = chunk_split(base64_encode($this->bodyText));
+        $this->messageBody = [];
+
+        if ($this->attachments !== []) {
+            // Start the mixed boundary
+            $this->emailHeaders['Content-Type'] = 'multipart/mixed; boundary="' . $mixedBoundary . '"';
+
+            $this->messageBody[] = '--' . $mixedBoundary;
+
+            // Create the alternative part
+            $this->messageBody[] = 'Content-Type: multipart/alternative; boundary="' . $alternativeBoundary . '"';
+            $this->messageBody[] = '';
+
+            $this->constructAlternativePart();
+
+            // Attachments
+            $this->processEmailAttachments($mixedBoundary);
+
+            // End the mixed boundary
+            $this->messageBody[] = '--' . $mixedBoundary . '--';
+        } else {
+            // No attachments, use alternative boundary
+            $this->constructAlternativePart();
+            $this->emailHeaders['Content-Type'] = 'multipart/alternative; boundary="' . $alternativeBoundary . '"';
+        }
+    }
+
+    /**
+     * Constructs the alternative part of the message body (text and HTML).
+     */
+    private function constructAlternativePart(): void
+    {
+        // Text part
+        $this->messageBody[] = '--' . $this->boundary;
+        $this->messageBody[] = 'Content-Type: text/plain; charset=UTF-8';
+        $this->messageBody[] = 'Content-Transfer-Encoding: 7bit';
+        $this->messageBody[] = '';
+        $this->messageBody[] = $this->bodyText;
+        $this->messageBody[] = '';
 
         // HTML part
-        $this->messageBody[] = "--{$this->boundary}";
-        $this->messageBody[] = "Content-Type: text/html; charset=UTF-8";
-        $this->messageBody[] = "Content-Transfer-Encoding: base64";
-        $this->messageBody[] = "";
-        $this->messageBody[] = chunk_split(base64_encode($this->bodyHtml));
+        $this->messageBody[] = '--' . $this->boundary;
+        $this->messageBody[] = 'Content-Type: text/html; charset=UTF-8';
+        $this->messageBody[] = 'Content-Transfer-Encoding: 7bit';
+        $this->messageBody[] = '';
+        $this->messageBody[] = $this->bodyHtml;
+        $this->messageBody[] = '';
 
-        // End the multipart message
-        $this->messageBody[] = "--{$this->boundary}--";
+        // End of alternative part
+        $this->messageBody[] = '--' . $this->boundary . '--';
+    }
+
+    /**
+     * Processes email attachments and adds them to the message body.
+     */
+    protected function processEmailAttachments(string $mixedBoundary): void
+    {
+        foreach ($this->attachments as $attachment) {
+            $filename = basename($attachment);
+            $mimeType = mime_content_type($attachment) ?: 'application/octet-stream';
+            $fileContent = file_get_contents($attachment);
+
+            if ($fileContent === false) {
+                throw new RuntimeException('Failed to read attachment: ' . $attachment);
+            }
+
+            $this->messageBody[] = '--' . $mixedBoundary;
+            $this->messageBody[] = 'Content-Type: ' . $mimeType . '; name="' . $filename . '"';
+            $this->messageBody[] = 'Content-Disposition: attachment; filename="' . $filename . '"';
+            $this->messageBody[] = 'Content-Transfer-Encoding: base64';
+            $this->messageBody[] = '';
+            $this->messageBody[] = chunk_split(base64_encode($fileContent));
+        }
     }
 
     /**
      * Sends an email asynchronously using Amazon SES.
-     * This method performs rate limiting checks, validates email data,
-     * constructs the message body, and then sends the email asynchronously.
-     * It logs the success or failure of the email sending operation.
      *
-     * @return PromiseInterface A promise that resolves with the result of the email sending operation.
-     *                          The promise resolves with an array containing the 'MessageId' on success.
-     * @throws RuntimeException If the email sending rate limit is exceeded.
-     * @throws InvalidArgumentException If the email data validation fails.
-     * @throws AwsException If there's an error during the AWS SES API call.
+     * @throws RandomException
      */
     public function sendEmailAsync(): PromiseInterface
     {
@@ -471,12 +499,17 @@ class EmailService implements EmailServiceInterface
         }
 
         $this->fullEmailDataValidation();
+        $this->setEmailHeaders();
         $this->constructMessageBody();
+
+        $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
 
         return $this->sesClient->sendRawEmailAsync([
             'RawMessage' => [
-                'Data' => implode("\n", $this->messageBody),
+                'Data' => $rawMessage,
             ],
+            'Source' => $this->source(),
+            'ReturnPath' => $this->returnPath,
         ])->then(
             function ($result) {
                 $this->logger->info('Email sent successfully', [
@@ -491,33 +524,5 @@ class EmailService implements EmailServiceInterface
                 throw $exception;
             }
         );
-    }
-
-    /**
-     * Processes email attachments and adds them to the message body.
-     * This method iterates through all attachments, reads their content,
-     * encodes them in base64, and adds them to the email message body
-     * with appropriate MIME headers.
-     *
-     * @throws RuntimeException If an attachment file cannot be read.
-     */
-    protected function processEmailAttachments(): void
-    {
-        foreach ($this->attachments as $attachment) {
-            $attachmentContent = file_get_contents($attachment);
-            if ($attachmentContent === false) {
-                throw new RuntimeException("Failed to read attachment file: $attachment");
-            }
-            $attachmentContent = chunk_split(base64_encode($attachmentContent));
-            $filename = basename($attachment);
-            $mimeType = mime_content_type($attachment) ?: $this->mimeType;
-
-            $this->messageBody[] = '--' . $this->boundary;
-            $this->messageBody[] = 'Content-Type: ' . $mimeType . '; name="' . $filename . '"';
-            $this->messageBody[] = 'Content-Disposition: attachment; filename="' . $filename . '"';
-            $this->messageBody[] = 'Content-Transfer-Encoding: base64';
-            $this->messageBody[] = '';
-            $this->messageBody[] = $attachmentContent;
-        }
     }
 }
