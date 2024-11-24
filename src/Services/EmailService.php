@@ -267,7 +267,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setBodyHtml(string $bodyHtml): self
     {
-        $this->bodyHtml = $bodyHtml;
+        $this->bodyHtml = filter_var($bodyHtml, FILTER_SANITIZE_FULL_SPECIAL_CHARS);
         return $this;
     }
 
@@ -281,7 +281,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setBodyText(string $bodyText): self
     {
-        $this->bodyText = $bodyText;
+        $this->bodyText = htmlspecialchars($bodyText, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         return $this;
     }
 
@@ -314,7 +314,7 @@ class EmailService implements EmailServiceInterface
      * @throws InvalidArgumentException If the email data validation fails.
      * @throws AwsException If there's an error during the AWS SES API call.
      */
-    public function send(): Result
+    public function sendEmail(): Result
     {
         if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
                 'send_email',
@@ -324,28 +324,16 @@ class EmailService implements EmailServiceInterface
         }
 
         $this->fullEmailDataValidation();
+        $this->setEmailHeaders();
+        $this->constructMessageBody();
+
+        $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
+        $rawMessageBase64 = base64_encode($rawMessage);
 
         try {
-            $result = $this->sesClient->sendEmail([
-                'Source' => $this->source(),
-                'Destination' => [
-                    'ToAddresses' => [$this->recipientEmail],
-                ],
-                'Message' => [
-                    'Subject' => [
-                        'Charset' => 'UTF-8',
-                        'Data' => $this->subject,
-                    ],
-                    'Body' => [
-                        'Text' => [
-                            'Charset' => 'UTF-8',
-                            'Data' => $this->bodyText,
-                        ],
-                        'Html' => [
-                            'Charset' => 'UTF-8',
-                            'Data' => $this->bodyHtml,
-                        ],
-                    ],
+            $result = $this->sesClient->sendRawEmail([
+                'RawMessage' => [
+                    'Data' => $rawMessageBase64,
                 ],
             ]);
             $this->logger->info('Email sent successfully', [
@@ -389,6 +377,26 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
+     * Sets the email headers for the message.
+     * This method populates the $emailHeaders array with necessary headers for the email,
+     * including From, Reply-To, Return-Path, Subject, MIME-Version, and Content-Type.
+     * It uses class properties to set these values, ensuring that the email is properly
+     * formatted for sending.
+     */
+    protected function setEmailHeaders(): void
+    {
+        $this->emailHeaders = [
+            'From: ' . $this->source(),
+            'Reply-To: ' . $this->source(),
+            'To: ' . $this->recipientEmail,
+            'Subject: =?UTF-8?B?' . base64_encode($this->subject) . '?=',
+            'Return-Path: ' . $this->returnPath,
+            'MIME-Version: 1.0',
+            'Content-Type: multipart/alternative; boundary="' . $this->boundary . '"',
+        ];
+    }
+
+    /**
      * Generates the 'From' field for the email header.
      * This method constructs the 'From' field of the email header. If a sender name
      * is set, it combines the name and email address in the format "Name <email@example.com>".
@@ -404,50 +412,6 @@ class EmailService implements EmailServiceInterface
             return sprintf('%s <%s>', $this->senderName, $this->senderEmail);
         }
         return $this->senderEmail;
-    }
-
-    /**
-     * Sends an email asynchronously using Amazon SES.
-     * This method performs rate limiting checks, validates email data,
-     * constructs the message body, and then sends the email asynchronously.
-     * It logs the success or failure of the email sending operation.
-     *
-     * @return PromiseInterface A promise that resolves with the result of the email sending operation.
-     *                          The promise resolves with an array containing the 'MessageId' on success.
-     * @throws RuntimeException If the email sending rate limit is exceeded.
-     * @throws InvalidArgumentException If the email data validation fails.
-     * @throws AwsException If there's an error during the AWS SES API call.
-     */
-    public function sendEmailAsync(): PromiseInterface
-    {
-        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
-                'send_email',
-                $this->senderEmail
-            )) {
-            throw new RuntimeException('Email sending rate limit exceeded');
-        }
-
-        $this->fullEmailDataValidation();
-        $this->constructMessageBody();
-
-        return $this->sesClient->sendRawEmailAsync([
-            'RawMessage' => [
-                'Data' => implode("\n", $this->messageBody),
-            ],
-        ])->then(
-            function ($result) {
-                $this->logger->info('Email sent successfully', [
-                    'messageId' => $result['MessageId'],
-                ]);
-                return $result;
-            },
-            function ($exception): void {
-                $this->logger->error('Error sending email', [
-                    'error' => $exception->getMessage(),
-                ]);
-                throw $exception;
-            }
-        );
     }
 
     /**
@@ -508,22 +472,46 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Sets the email headers for the message.
-     * This method populates the $emailHeaders array with necessary headers for the email,
-     * including From, Reply-To, Return-Path, Subject, MIME-Version, and Content-Type.
-     * It uses class properties to set these values, ensuring that the email is properly
-     * formatted for sending.
+     * Sends an email asynchronously using Amazon SES.
+     * This method performs rate limiting checks, validates email data,
+     * constructs the message body, and then sends the email asynchronously.
+     * It logs the success or failure of the email sending operation.
+     *
+     * @return PromiseInterface A promise that resolves with the result of the email sending operation.
+     *                          The promise resolves with an array containing the 'MessageId' on success.
+     * @throws RuntimeException If the email sending rate limit is exceeded.
+     * @throws InvalidArgumentException If the email data validation fails.
+     * @throws AwsException If there's an error during the AWS SES API call.
      */
-    protected function setEmailHeaders(): void
+    public function sendEmailAsync(): PromiseInterface
     {
-        $this->emailHeaders = [
-            'From: ' . $this->source(),
-            'Reply-To: ' . $this->source(),
-            'To: ' . $this->recipientEmail,
-            'Subject: =?UTF-8?B?' . base64_encode($this->subject) . '?=',
-            'Return-Path: ' . $this->returnPath,
-            'MIME-Version: 1.0',
-            'Content-Type: multipart/alternative; boundary="' . $this->boundary . '"',
-        ];
+        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
+                'send_email',
+                $this->senderEmail
+            )) {
+            throw new RuntimeException('Email sending rate limit exceeded');
+        }
+
+        $this->fullEmailDataValidation();
+        $this->constructMessageBody();
+
+        return $this->sesClient->sendRawEmailAsync([
+            'RawMessage' => [
+                'Data' => implode("\n", $this->messageBody),
+            ],
+        ])->then(
+            function ($result) {
+                $this->logger->info('Email sent successfully', [
+                    'messageId' => $result['MessageId'],
+                ]);
+                return $result;
+            },
+            function ($exception): void {
+                $this->logger->error('Error sending email', [
+                    'error' => $exception->getMessage(),
+                ]);
+                throw $exception;
+            }
+        );
     }
 }

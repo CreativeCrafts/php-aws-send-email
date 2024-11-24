@@ -25,7 +25,7 @@ interface EmailServiceInterface
 
     public function setEmailTemplate(string $templateName, array $variables): self;
 
-    public function send(): Result;
+    public function sendEmail(): Result;
 
     public function sendEmailAsync(): PromiseInterface;
 }
