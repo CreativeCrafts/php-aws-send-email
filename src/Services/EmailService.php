@@ -267,7 +267,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setBodyHtml(string $bodyHtml): self
     {
-        $this->bodyHtml = filter_var($bodyHtml, FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+        $this->bodyHtml = $bodyHtml;
         return $this;
     }
 
@@ -281,7 +281,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setBodyText(string $bodyText): self
     {
-        $this->bodyText = htmlspecialchars($bodyText, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $this->bodyText = $bodyText;
         return $this;
     }
 
