@@ -91,7 +91,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setReturnPath(string $returnPath): self
     {
-        if (! $this->validateEmail($returnPath)) {
+        if (!$this->validateEmail($returnPath)) {
             throw new InvalidArgumentException('Invalid email address');
         }
         $this->returnPath = $returnPath;
@@ -109,7 +109,7 @@ class EmailService implements EmailServiceInterface
      */
     protected function validateEmail(string $email): bool
     {
-        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return false;
         }
 
@@ -133,7 +133,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setSenderEmail(string $email): self
     {
-        if (! $this->validateEmail($email)) {
+        if (!$this->validateEmail($email)) {
             throw new InvalidArgumentException('Invalid sender email');
         }
         $this->senderEmail = $email;
@@ -165,7 +165,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setRecipientEmail(string $email): self
     {
-        if (! $this->validateEmail($email)) {
+        if (!$this->validateEmail($email)) {
             throw new InvalidArgumentException('Invalid recipient email');
         }
         $this->recipientEmail = $email;
@@ -213,7 +213,7 @@ class EmailService implements EmailServiceInterface
      */
     private function validateAttachment(string $filePath): void
     {
-        if (! file_exists($filePath)) {
+        if (!file_exists($filePath)) {
             throw new InvalidArgumentException('Attachment file does not exist');
         }
 
@@ -223,7 +223,7 @@ class EmailService implements EmailServiceInterface
         }
 
         $mimeType = mime_content_type($filePath);
-        if (! in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
+        if (!in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
             throw new InvalidArgumentException('Attachment file type is not allowed');
         }
     }
@@ -241,7 +241,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setEmailTemplate(string $templateName, array $variables): self
     {
-        if (! $this->templateEngine instanceof TemplateEngineInterface) {
+        if (!$this->templateEngine instanceof TemplateEngineInterface) {
             throw new RuntimeException('Template engine is not set');
         }
         try {
@@ -316,10 +316,10 @@ class EmailService implements EmailServiceInterface
      */
     public function sendEmail(): Result
     {
-        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
-            'send_email',
-            $this->senderEmail
-        )) {
+        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
+                'send_email',
+                $this->senderEmail
+            )) {
             throw new RuntimeException('Email sending rate limit exceeded');
         }
 
@@ -328,12 +328,11 @@ class EmailService implements EmailServiceInterface
         $this->constructMessageBody();
 
         $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n" . implode("\r\n", $this->messageBody);
-        $rawMessageBase64 = base64_encode($rawMessage);
 
         try {
             $result = $this->sesClient->sendRawEmail([
                 'RawMessage' => [
-                    'Data' => $rawMessageBase64,
+                    'Data' => $rawMessage,
                 ],
             ]);
             $this->logger->info('Email sent successfully', [
@@ -362,10 +361,10 @@ class EmailService implements EmailServiceInterface
      */
     protected function fullEmailDataValidation(): void
     {
-        if (! $this->validateEmail($this->senderEmail)) {
+        if (!$this->validateEmail($this->senderEmail)) {
             throw new InvalidArgumentException('A valid sender email is required');
         }
-        if (! $this->validateEmail($this->recipientEmail)) {
+        if (!$this->validateEmail($this->recipientEmail)) {
             throw new InvalidArgumentException('A valid recipient email is required');
         }
         if ($this->subject === '' || $this->subject === '0') {
@@ -485,10 +484,10 @@ class EmailService implements EmailServiceInterface
      */
     public function sendEmailAsync(): PromiseInterface
     {
-        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
-            'send_email',
-            $this->senderEmail
-        )) {
+        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
+                'send_email',
+                $this->senderEmail
+            )) {
             throw new RuntimeException('Email sending rate limit exceeded');
         }
 
