@@ -17,3 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add new feature to send email with attachment
 - Stable release
+
+## [1.13.0] - 2024-11-24
+
+- Added full code documentation
