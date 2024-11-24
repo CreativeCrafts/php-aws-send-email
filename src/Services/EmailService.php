@@ -327,12 +327,13 @@ class EmailService implements EmailServiceInterface
         $this->setEmailHeaders();
         $this->constructMessageBody();
 
-        $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n" . implode("\r\n", $this->messageBody);
+        $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
+        $rawMessageBase64 = base64_encode($rawMessage);
 
         try {
             $result = $this->sesClient->sendRawEmail([
                 'RawMessage' => [
-                    'Data' => $rawMessage,
+                    'Data' => $rawMessageBase64,
                 ],
             ]);
             $this->logger->info('Email sent successfully', [
@@ -385,13 +386,13 @@ class EmailService implements EmailServiceInterface
     protected function setEmailHeaders(): void
     {
         $this->emailHeaders = [
-            'From' => $this->source(),
-            'Reply-To' => $this->source(),
+            'From: ' . $this->source(),
+            'Reply-To: ' . $this->source(),
             'To: ' . $this->recipientEmail,
             'Subject: =?UTF-8?B?' . base64_encode($this->subject) . '?=',
-            'Return-Path' => $this->returnPath,
-            'MIME-Version' => '1.0',
-            'Content-Type' => 'multipart/alternative; boundary="' . $this->boundary . '"',
+            'Return-Path: ' . $this->returnPath,
+            'MIME-Version: 1.0',
+            'Content-Type: multipart/alternative; boundary="' . $this->boundary . '"',
         ];
     }
 
