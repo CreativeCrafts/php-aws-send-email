@@ -36,3 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added ability to add bounced email address to the email
 - Added ability to add blind carbon copy (BCC) to the email
+
+## [1.17.0] - 2024-11-25
+
+- Updated composer dependencies and general code cleanup
