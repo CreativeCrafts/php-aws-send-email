@@ -45,3 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated composer dependencies and general code cleanup
 - Updated GitHub actions workflows
+
+## [1.19.0] - 2024-11-25
+
+- Added support for different versions of psr loggers
