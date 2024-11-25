@@ -31,3 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Code cleanup
 - Added more comments to the code
 - Stable release
+
+## [1.16.0] - 2024-11-24
+
+- Added ability to add bounced email address to the email
+- Added ability to add blind carbon copy (BCC) to the email

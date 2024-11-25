@@ -23,7 +23,9 @@ class EmailService implements EmailServiceInterface
 
     private const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
 
-    protected string $returnPath = '';
+    private string $returnPath = '';
+
+    private string $bcc = '';
 
     private SesClient $sesClient;
 
@@ -87,6 +89,7 @@ class EmailService implements EmailServiceInterface
      */
     public function setSenderEmail(string $email): self
     {
+        $this->validateEmail($email);
         $this->senderEmail = $email;
         return $this;
     }
@@ -116,7 +119,32 @@ class EmailService implements EmailServiceInterface
      */
     public function setRecipientEmail(string $email): self
     {
+        $this->validateEmail($email);
         $this->recipientEmail = $email;
+        return $this;
+    }
+
+    public function setReturnPath(string $returnPath): self
+    {
+        $this->validateEmail($returnPath);
+        $this->returnPath = $returnPath;
+        return $this;
+    }
+
+    /**
+     * Sets the BCC (Blind Carbon Copy) recipient for the email.
+     * This method allows you to specify an email address that will receive a copy of the email
+     * without other recipients being aware. It validates the provided email address before setting it.
+     * This method is part of the fluent interface, allowing method chaining.
+     *
+     * @param string $bcc The email address to be set as BCC recipient.
+     * @return self Returns the current instance of the class for method chaining.
+     * @throws InvalidArgumentException If the provided email address is invalid.
+     */
+    public function setBcc(string $bcc): self
+    {
+        $this->validateEmail($bcc);
+        $this->bcc = $bcc;
         return $this;
     }
 
@@ -180,9 +208,6 @@ class EmailService implements EmailServiceInterface
 
         $template = $this->templateEngine->load($templateName);
         $renderedContent = $template->render($variables);
-
-        // Assuming the template provides both text and HTML versions
-        // Adjust as needed based on your template engine's implementation
         $this->bodyText = strip_tags($renderedContent);
         $this->bodyHtml = $renderedContent;
 
@@ -231,13 +256,19 @@ class EmailService implements EmailServiceInterface
         $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
 
         try {
-            $result = $this->sesClient->sendRawEmail([
+            $params = [
                 'RawMessage' => [
                     'Data' => $rawMessage,
                 ],
                 'Source' => $this->getFormattedSender(),
                 'ReturnPath' => $this->returnPath,
-            ]);
+            ];
+
+            if ($this->bcc !== '' && $this->bcc !== '0') {
+                $params['Destinations'] = [$this->recipientEmail, $this->bcc];
+            }
+
+            $result = $this->sesClient->sendRawEmail($params);
             $this->logger->info('Email sent successfully', [
                 'messageId' => $result->get('MessageId'),
             ]);
@@ -278,13 +309,18 @@ class EmailService implements EmailServiceInterface
         // Combine headers and body with proper line breaks
         $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
 
-        return $this->sesClient->sendRawEmailAsync([
+        $params = [
             'RawMessage' => [
                 'Data' => $rawMessage,
             ],
             'Source' => $this->getFormattedSender(),
             'ReturnPath' => $this->returnPath,
-        ])->then(
+        ];
+
+        if ($this->bcc !== '' && $this->bcc !== '0') {
+            $params['Destinations'] = [$this->recipientEmail, $this->bcc];
+        }
+        return $this->sesClient->sendRawEmailAsync($params)->then(
             function ($result) {
                 $this->logger->info('Email sent successfully', [
                     'messageId' => $result['MessageId'],
@@ -316,6 +352,10 @@ class EmailService implements EmailServiceInterface
             "Subject: {$this->encodeHeader($this->subject)}",
             "MIME-Version: 1.0",
         ];
+
+        if ($this->bcc !== '' && $this->bcc !== '0') {
+            $this->emailHeaders[] = "Bcc: {$this->bcc}";
+        }
     }
 
     /**
@@ -377,6 +417,20 @@ class EmailService implements EmailServiceInterface
             $this->messageBody[] = "Content-Transfer-Encoding: base64";
             $this->messageBody[] = "";
             $this->messageBody[] = chunk_split(base64_encode($fileContent));
+        }
+    }
+
+    /**
+     * Validates an email address.
+     * This method checks if the provided email address is valid.
+     *
+     * @param string $email The email address to be validated.
+     * @throws InvalidArgumentException If the email address is invalid.
+     */
+    private function validateEmail(string $email): void
+    {
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new InvalidArgumentException('Invalid email address: ' . $email);
         }
     }
 
