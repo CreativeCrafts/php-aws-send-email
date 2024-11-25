@@ -40,3 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.17.0] - 2024-11-25
 
 - Updated composer dependencies and general code cleanup
+
+## [1.18.0] - 2024-11-25
+
+- Updated composer dependencies and general code cleanup
+- Updated GitHub actions workflows
