@@ -19,9 +19,7 @@
   "require": {
     "php": "^8.2",
     "aws/aws-sdk-php": "^3.329",
-    "guzzlehttp/guzzle": "^7.8",
-    "ext-redis": "*",
-    "ext-fileinfo": "*"
+    "guzzlehttp/guzzle": "^7.8"
   },
   "require-dev": {
     "laravel/pint": "^1.0",
