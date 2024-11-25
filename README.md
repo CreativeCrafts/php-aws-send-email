@@ -843,7 +843,7 @@ Please review [our security policy](../../security/policy) on how to report secu
 
 ## Credits
 
-- [Godspower](https://github.com/Prince)
+- [Godspower Oduose](https://github.com/rockblings)
 - [All Contributors](../../contributors)
 
 ## License
