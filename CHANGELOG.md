@@ -49,3 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.19.0] - 2024-11-25
 
 - Added support for different versions of psr loggers
+
+## [1.20.0] - 2024-11-25
+
+- Implemented 100% Pest mutation testing for EmailService class

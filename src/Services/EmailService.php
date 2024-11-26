@@ -7,6 +7,11 @@ namespace CreativeCrafts\EmailService\Services;
 use Aws\Exception\AwsException;
 use Aws\Result;
 use Aws\Ses\SesClient;
+use CreativeCrafts\EmailService\Exceptions\EmailThrottleException;
+use CreativeCrafts\EmailService\Exceptions\InvalidAttachmentException;
+use CreativeCrafts\EmailService\Exceptions\InvalidEmailAddressException;
+use CreativeCrafts\EmailService\Exceptions\MissingRequiredParameterException;
+use CreativeCrafts\EmailService\Exceptions\TemplateEngineNotSetException;
 use CreativeCrafts\EmailService\Interfaces\EmailServiceInterface;
 use CreativeCrafts\EmailService\Interfaces\RateLimiterInterface;
 use CreativeCrafts\EmailService\Interfaces\TemplateEngineInterface;
@@ -92,6 +97,20 @@ class EmailService implements EmailServiceInterface
         $this->validateEmail($email);
         $this->senderEmail = $email;
         return $this;
+    }
+
+    /**
+     * Validates an email address.
+     * This method checks if the provided email address is valid.
+     *
+     * @param string $email The email address to be validated.
+     * @throws InvalidEmailAddressException If the email address is invalid.
+     */
+    private function validateEmail(string $email): void
+    {
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new InvalidEmailAddressException('Invalid email address: ' . $email, 406);
+        }
     }
 
     /**
@@ -198,12 +217,12 @@ class EmailService implements EmailServiceInterface
      * @param string $templateName The name or identifier of the email template to be used.
      * @param array $variables An associative array of variables to be used in rendering the template. Default is an empty array.
      * @return self Returns the current instance of the class for method chaining.
-     * @throws RuntimeException If the template engine is not set.
+     * @throws TemplateEngineNotSetException If the template engine is not set.
      */
     public function setEmailTemplate(string $templateName, array $variables = []): self
     {
-        if (! $this->templateEngine instanceof TemplateEngineInterface) {
-            throw new RuntimeException('Template engine not set.');
+        if (!$this->templateEngine instanceof TemplateEngineInterface) {
+            throw new TemplateEngineNotSetException('Template engine not set.', 406);
         }
 
         $template = $this->templateEngine->load($templateName);
@@ -231,6 +250,36 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
+     * Validates an attachment file for email sending.
+     * This method checks if the file exists, is within the allowed size limit,
+     * and has an allowed MIME type.
+     *
+     * @param string $filePath The full path to the attachment file.
+     * @throws InvalidArgumentException If the file doesn't exist, exceeds size limit,
+     *                                  or has an unsupported MIME type.
+     */
+    private function validateAttachment(string $filePath): void
+    {
+        if (!file_exists($filePath)) {
+            throw new InvalidAttachmentException('Attachment file does not exist: ' . $filePath, 406);
+        }
+
+        $fileSize = filesize($filePath);
+        if ($fileSize === false || $fileSize > self::MAX_ATTACHMENT_SIZE) {
+            throw new InvalidAttachmentException(
+                'Attachment file size exceeds the maximum allowed size of 10 MB.', 406
+            );
+        }
+
+        $mimeType = mime_content_type($filePath);
+        if ($mimeType === false || !in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
+            throw new InvalidAttachmentException(
+                'Attachment file type is not allowed: ' . ($mimeType ?: 'Unknown'), 406
+            );
+        }
+    }
+
+    /**
      * Sends an email using Amazon SES.
      * This method performs rate limiting checks, validates email data, constructs the email message,
      * and sends it using Amazon SES. It logs the result of the operation and handles any exceptions.
@@ -238,15 +287,15 @@ class EmailService implements EmailServiceInterface
      * @return Result The result object from Amazon SES containing information about the sent email.
      * @throws AwsException If there's an error while sending the email through Amazon SES.
      * @throws RandomException If there's an issue generating random bytes for the MIME boundary.
-     * @throws RuntimeException If the email sending rate limit is exceeded.
+     * @throws EmailThrottleException If the email sending rate limit is exceeded.
      */
     public function sendEmail(): Result
     {
-        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
-            'send_email',
-            $this->senderEmail
-        )) {
-            throw new RuntimeException('Email sending rate limit exceeded');
+        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
+                'send_email',
+                $this->senderEmail
+            )) {
+            throw new EmailThrottleException('Email sending rate limit exceeded', 406);
         }
 
         $this->fullEmailDataValidation();
@@ -282,58 +331,30 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
-     * Sends an email asynchronously using Amazon SES.
-     * This method performs rate limiting checks, validates email data, constructs the email message,
-     * and sends it asynchronously using Amazon SES. It logs the result of the operation and handles
-     * any exceptions.
+     * Validates that all required email data is set.
+     * This method checks if the essential email components (sender email, recipient email,
+     * subject, and body) are properly set before sending an email. It throws exceptions
+     * for any missing required data.
      *
-     * @return PromiseInterface A promise that resolves with the result of the email sending operation.
-     *                          The promise will be fulfilled with an array containing the 'MessageId'
-     *                          on success, or rejected with an exception on failure.
-     * @throws RuntimeException If the email sending rate limit is exceeded.
-     * @throws RandomException If there's an issue generating random bytes for the MIME boundary.
+     * @throws MissingRequiredParameterException() If any of the required email fields (sender email, recipient email, subject, or body) are not set.
      */
-    public function sendEmailAsync(): PromiseInterface
+    private function fullEmailDataValidation(): void
     {
-        if ($this->rateLimiter instanceof RateLimiterInterface && ! $this->rateLimiter->allow(
-            'send_email',
-            $this->senderEmail
-        )) {
-            throw new RuntimeException('Email sending rate limit exceeded');
+        if ($this->senderEmail === '' || $this->senderEmail === '0') {
+            throw new MissingRequiredParameterException('Sender email is not set.', 406);
         }
 
-        $this->fullEmailDataValidation();
-        $this->setEmailHeaders();
-        $this->constructMessageBody();
-
-        // Combine headers and body with proper line breaks
-        $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
-
-        $params = [
-            'RawMessage' => [
-                'Data' => $rawMessage,
-            ],
-            'Source' => $this->getFormattedSender(),
-            'ReturnPath' => $this->returnPath,
-        ];
-
-        if ($this->bcc !== '' && $this->bcc !== '0') {
-            $params['Destinations'] = [$this->recipientEmail, $this->bcc];
+        if ($this->recipientEmail === '' || $this->recipientEmail === '0') {
+            throw new MissingRequiredParameterException('Recipient email is not set.', 406);
         }
-        return $this->sesClient->sendRawEmailAsync($params)->then(
-            function ($result) {
-                $this->logger->info('Email sent successfully', [
-                    'messageId' => $result['MessageId'],
-                ]);
-                return $result;
-            },
-            function ($exception): void {
-                $this->logger->error('Error sending email', [
-                    'error' => $exception->getMessage(),
-                ]);
-                throw $exception;
-            }
-        );
+
+        if ($this->subject === '' || $this->subject === '0') {
+            throw new MissingRequiredParameterException('Email subject is not set.', 406);
+        }
+
+        if (($this->bodyText === '' || $this->bodyText === '0') && ($this->bodyHtml === '' || $this->bodyHtml === '0')) {
+            throw new MissingRequiredParameterException('Email body is not set.', 406);
+        }
     }
 
     /**
@@ -355,135 +376,6 @@ class EmailService implements EmailServiceInterface
 
         if ($this->bcc !== '' && $this->bcc !== '0') {
             $this->emailHeaders[] = "Bcc: {$this->bcc}";
-        }
-    }
-
-    /**
-     * Constructs the message body for the email.
-     * This method builds the email message body, handling both cases with and without attachments.
-     * For emails with attachments, it creates a multipart/mixed message with nested multipart/alternative content.
-     * For emails without attachments, it creates a simple multipart/alternative message.
-     * The method sets up appropriate MIME boundaries, constructs the text and HTML parts of the email,
-     * and includes any attachments if present.
-     *
-     * @throws RandomException If there's an issue generating random bytes for the MIME boundary.
-     */
-    protected function constructMessageBody(): void
-    {
-        if ($this->attachments !== []) {
-            $mixedBoundary = '=_Mixed_' . bin2hex(random_bytes(16));
-            $alternativeBoundary = $this->boundary;
-
-            $this->emailHeaders[] = "Content-Type: multipart/mixed; boundary=\"{$mixedBoundary}\"";
-
-            $this->messageBody = [
-                "--{$mixedBoundary}",
-                "Content-Type: multipart/alternative; boundary=\"{$alternativeBoundary}\"",
-                "",
-            ];
-
-            $this->constructAlternativePart();
-            $this->processEmailAttachments($mixedBoundary);
-            $this->messageBody[] = "--{$mixedBoundary}--";
-        } else {
-            $this->constructAlternativePart();
-            $this->emailHeaders[] = "Content-Type: multipart/alternative; boundary=\"{$this->boundary}\"";
-        }
-    }
-
-    /**
-     * Processes email attachments and adds them to the message body.
-     * This method iterates through the attachments, reads their content,
-     * determines the MIME type, and adds them to the email message body
-     * with appropriate headers and encoding.
-     *
-     * @param string $mixedBoundary The MIME boundary string for separating multipart content.
-     * @throws RuntimeException If unable to read an attachment file.
-     */
-    protected function processEmailAttachments(string $mixedBoundary): void
-    {
-        foreach ($this->attachments as $attachment) {
-            $filename = basename($attachment);
-            $mimeType = mime_content_type($attachment) ?: 'application/octet-stream';
-            $fileContent = file_get_contents($attachment);
-
-            if ($fileContent === false) {
-                throw new RuntimeException('Failed to read attachment: ' . $attachment);
-            }
-
-            $this->messageBody[] = "--{$mixedBoundary}";
-            $this->messageBody[] = "Content-Type: {$mimeType}; name=\"{$filename}\"";
-            $this->messageBody[] = "Content-Disposition: attachment; filename=\"{$filename}\"";
-            $this->messageBody[] = "Content-Transfer-Encoding: base64";
-            $this->messageBody[] = "";
-            $this->messageBody[] = chunk_split(base64_encode($fileContent));
-        }
-    }
-
-    /**
-     * Validates an email address.
-     * This method checks if the provided email address is valid.
-     *
-     * @param string $email The email address to be validated.
-     * @throws InvalidArgumentException If the email address is invalid.
-     */
-    private function validateEmail(string $email): void
-    {
-        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            throw new InvalidArgumentException('Invalid email address: ' . $email);
-        }
-    }
-
-    /**
-     * Validates an attachment file for email sending.
-     * This method checks if the file exists, is within the allowed size limit,
-     * and has an allowed MIME type.
-     *
-     * @param string $filePath The full path to the attachment file.
-     * @throws InvalidArgumentException If the file doesn't exist, exceeds size limit,
-     *                                  or has an unsupported MIME type.
-     */
-    private function validateAttachment(string $filePath): void
-    {
-        if (! file_exists($filePath)) {
-            throw new InvalidArgumentException('Attachment file does not exist: ' . $filePath);
-        }
-
-        $fileSize = filesize($filePath);
-        if ($fileSize === false || $fileSize > self::MAX_ATTACHMENT_SIZE) {
-            throw new InvalidArgumentException('Attachment file size exceeds the maximum allowed size of 10 MB.');
-        }
-
-        $mimeType = mime_content_type($filePath);
-        if ($mimeType === false || ! in_array($mimeType, self::ALLOWED_MIME_TYPES, true)) {
-            throw new InvalidArgumentException('Attachment file type is not allowed: ' . ($mimeType ?: 'Unknown'));
-        }
-    }
-
-    /**
-     * Validates that all required email data is set.
-     * This method checks if the essential email components (sender email, recipient email,
-     * subject, and body) are properly set before sending an email. It throws exceptions
-     * for any missing required data.
-     *
-     * @throws RuntimeException If any of the required email fields (sender email, recipient email, subject, or body) are not set.
-     */
-    private function fullEmailDataValidation(): void
-    {
-        if ($this->senderEmail === '' || $this->senderEmail === '0') {
-            throw new RuntimeException('Sender email is not set.');
-        }
-
-        if ($this->recipientEmail === '' || $this->recipientEmail === '0') {
-            throw new RuntimeException('Recipient email is not set.');
-        }
-
-        if ($this->subject === '' || $this->subject === '0') {
-            throw new RuntimeException('Email subject is not set.');
-        }
-
-        if (($this->bodyText === '' || $this->bodyText === '0') && ($this->bodyHtml === '' || $this->bodyHtml === '0')) {
-            throw new RuntimeException('Email body is not set.');
         }
     }
 
@@ -524,6 +416,39 @@ class EmailService implements EmailServiceInterface
     }
 
     /**
+     * Constructs the message body for the email.
+     * This method builds the email message body, handling both cases with and without attachments.
+     * For emails with attachments, it creates a multipart/mixed message with nested multipart/alternative content.
+     * For emails without attachments, it creates a simple multipart/alternative message.
+     * The method sets up appropriate MIME boundaries, constructs the text and HTML parts of the email,
+     * and includes any attachments if present.
+     *
+     * @throws RandomException If there's an issue generating random bytes for the MIME boundary.
+     */
+    protected function constructMessageBody(): void
+    {
+        if ($this->attachments !== []) {
+            $mixedBoundary = '=_Mixed_' . bin2hex(random_bytes(16));
+            $alternativeBoundary = $this->boundary;
+
+            $this->emailHeaders[] = "Content-Type: multipart/mixed; boundary=\"{$mixedBoundary}\"";
+
+            $this->messageBody = [
+                "--{$mixedBoundary}",
+                "Content-Type: multipart/alternative; boundary=\"{$alternativeBoundary}\"",
+                "",
+            ];
+
+            $this->constructAlternativePart();
+            $this->processEmailAttachments($mixedBoundary);
+            $this->messageBody[] = "--{$mixedBoundary}--";
+        } else {
+            $this->constructAlternativePart();
+            $this->emailHeaders[] = "Content-Type: multipart/alternative; boundary=\"{$this->boundary}\"";
+        }
+    }
+
+    /**
      * Constructs the alternative part of the email message body.
      * This method builds the multipart/alternative section of the email,
      * which includes both plain text and HTML versions of the email content.
@@ -554,5 +479,89 @@ class EmailService implements EmailServiceInterface
 
         // End of alternative part
         $this->messageBody[] = "--{$this->boundary}--";
+    }
+
+    /**
+     * Processes email attachments and adds them to the message body.
+     * This method iterates through the attachments, reads their content,
+     * determines the MIME type, and adds them to the email message body
+     * with appropriate headers and encoding.
+     *
+     * @param string $mixedBoundary The MIME boundary string for separating multipart content.
+     * @throws RuntimeException If unable to read an attachment file.
+     */
+    protected function processEmailAttachments(string $mixedBoundary): void
+    {
+        foreach ($this->attachments as $attachment) {
+            $filename = basename($attachment);
+            $mimeType = mime_content_type($attachment) ?: 'application/octet-stream';
+            $fileContent = file_get_contents($attachment);
+
+            if ($fileContent === false) {
+                throw new RuntimeException('Failed to read attachment: ' . $attachment);
+            }
+
+            $this->messageBody[] = "--{$mixedBoundary}";
+            $this->messageBody[] = "Content-Type: {$mimeType}; name=\"{$filename}\"";
+            $this->messageBody[] = "Content-Disposition: attachment; filename=\"{$filename}\"";
+            $this->messageBody[] = "Content-Transfer-Encoding: base64";
+            $this->messageBody[] = "";
+            $this->messageBody[] = chunk_split(base64_encode($fileContent));
+        }
+    }
+
+    /**
+     * Sends an email asynchronously using Amazon SES.
+     * This method performs rate limiting checks, validates email data, constructs the email message,
+     * and sends it asynchronously using Amazon SES. It logs the result of the operation and handles
+     * any exceptions.
+     *
+     * @return PromiseInterface A promise that resolves with the result of the email sending operation.
+     *                          The promise will be fulfilled with an array containing the 'MessageId'
+     *                          on success, or rejected with an exception on failure.
+     * @throws EmailThrottleException If the email sending rate limit is exceeded.
+     * @throws RandomException If there's an issue generating random bytes for the MIME boundary.
+     */
+    public function sendEmailAsync(): PromiseInterface
+    {
+        if ($this->rateLimiter instanceof RateLimiterInterface && !$this->rateLimiter->allow(
+                'send_email',
+                $this->senderEmail
+            )) {
+            throw new EmailThrottleException('Email sending rate limit exceeded', 406);
+        }
+
+        $this->fullEmailDataValidation();
+        $this->setEmailHeaders();
+        $this->constructMessageBody();
+
+        // Combine headers and body with proper line breaks
+        $rawMessage = implode("\r\n", $this->emailHeaders) . "\r\n\r\n" . implode("\r\n", $this->messageBody);
+
+        $params = [
+            'RawMessage' => [
+                'Data' => $rawMessage,
+            ],
+            'Source' => $this->getFormattedSender(),
+            'ReturnPath' => $this->returnPath,
+        ];
+
+        if ($this->bcc !== '' && $this->bcc !== '0') {
+            $params['Destinations'] = [$this->recipientEmail, $this->bcc];
+        }
+        return $this->sesClient->sendRawEmailAsync($params)->then(
+            function ($result) {
+                $this->logger->info('Email sent successfully', [
+                    'messageId' => $result['MessageId'],
+                ]);
+                return $result;
+            },
+            function ($exception): void {
+                $this->logger->error('Error sending email', [
+                    'error' => $exception->getMessage(),
+                ]);
+                throw $exception;
+            }
+        );
     }
 }
