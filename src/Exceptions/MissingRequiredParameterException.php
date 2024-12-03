@@ -1,8 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace CreativeCrafts\EmailService\Exceptions;
 
-final class MissingRequiredParameterException extends \DomainException
+use DomainException;
+
+final class MissingRequiredParameterException extends DomainException
 {
     public function __construct(string $message = 'Missing required parameter.', int $code = 500)
     {

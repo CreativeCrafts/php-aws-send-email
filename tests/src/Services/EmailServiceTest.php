@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Aws\Result;
 use Aws\Ses\SesClient;
 use CreativeCrafts\EmailService\Exceptions\EmailThrottleException;

@@ -1,7 +1,8 @@
 <?php
 
-namespace CreativeCrafts\EmailService\Exceptions;
+declare(strict_types=1);
 
+namespace CreativeCrafts\EmailService\Exceptions;
 
 use DomainException;
 
