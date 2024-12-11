@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Implemented 100% Pest mutation testing for EmailService class
 
-## [1.21.0] - 2024-12-03
+## [1.22.0] - 2024-12-03
 
 - Bug Fix: Fixed issue with sending email in different languages
 - Fixed issue with wrong email header
