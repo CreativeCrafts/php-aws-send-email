@@ -17,7 +17,7 @@ A powerful and flexible PHP package for sending emails via Amazon SES (Simple Em
 - **Partial Rendering:** Include shared components across multiple templates without compromising security.
 - **Secure Variable Handling:** Avoid security vulnerabilities.
 
-Our features cater to a wide range of email sending needs, from simple transactional emails to complex, templated marketing campaigns with attachments.
+These features cater to a wide range of email sending needs, from simple transactional emails to complex, templated marketing campaigns with attachments.
 
 ## Installation
 
@@ -170,7 +170,7 @@ $emailService = new EmailService($sesClient, $logger, null, $templateEngine);
 // Prepare email data with variables for the template
 $emailData = [
     'etemplateheader' => 'Hej Jane Doe,', // Example header
-    'etemplate' => "Enligt överenskommelse översänder jag länk till JobMatch. Information och instruktioner finns på webbsidan du kommer till.\n\nHar du frågor är du välkommen att kontakta mig. Observera att det inte går att svara direkt på det här e-postmeddelandet.\n\nMed vänliga hälsningar,\nYour Name\nYour Company",
+    'etemplate' => "This is the sample content of the email template",
     'companydata' => [
         'name' => 'Your Company',
         'address' => '1234 Street Name',
@@ -194,7 +194,7 @@ try {
     $emailService->setSenderEmail('sender@yourdomain.com')
         ->setRecipientEmail('jane.doe@example.com')
         ->setSenderName('Your Company')
-        ->setSubject('Welcome to JobMatch')
+        ->setSubject('Order confirmation')
         ->setEmailTemplate('send-test', $emailData)
         ->sendEmail();
 
@@ -238,7 +238,7 @@ Combine templating and attachments to send personalized emails with supplementar
 // Prepare email data with variables for the template
 $emailData = [
     'etemplateheader' => 'Hej Jane Doe,', // Example header
-    'etemplate' => "Enligt överenskommelse översänder jag länk till JobMatch. Information och instruktioner finns på webbsidan du kommer till.\n\nHar du frågor är du välkommen att kontakta mig. Observera att det inte går att svara direkt på det här e-postmeddelandet.\n\nMed vänliga hälsningar,\nYour Name\nYour Company",
+    'etemplate' => "This is the sample content of the email template",
     'companydata' => [
         'name' => 'Your Company',
         'address' => '1234 Street Name',
@@ -258,7 +258,7 @@ try {
     $emailService->setSenderEmail('sender@yourdomain.com')
         ->setRecipientEmail('jane.doe@example.com')
         ->setSenderName('Your Company')
-        ->setSubject('Welcome to JobMatch')
+        ->setSubject('Order confirmation')
         ->setEmailTemplate('send-test', $emailData)
         ->sendEmail();
 
